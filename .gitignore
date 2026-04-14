@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+.env
+node_modules/
+dist/
+.DS_Store
+.tmp-test/
+storage/annotations/*
+storage/app_state/*
+!storage/annotations/.gitkeep

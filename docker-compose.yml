@@ -1,0 +1,86 @@
+x-build-proxy-args: &build_proxy_args
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  http_proxy: ${http_proxy:-}
+  https_proxy: ${https_proxy:-}
+  NO_PROXY: ${NO_PROXY:-}
+  no_proxy: ${no_proxy:-}
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args: *build_proxy_args
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "3300:3000"
+    restart: unless-stopped
+    depends_on:
+      - api
+    volumes:
+      - ./apps/web:/workspace/apps/web
+      - /workspace/apps/web/node_modules
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+      args: *build_proxy_args
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      APP_STATE_ROOT: /workspace/storage/app_state
+      RADELFT_RAMAP_PREPROCESS_WORKERS: 6
+      RORAD_DATASET_ROOT: /workspace-data/rorad
+      WORKER_URL: http://worker-base:8010
+      HOST_FILESYSTEM_ROOT: /hostfs
+      NO_PROXY: localhost,127.0.0.1,::1,api,web,worker-base,host.docker.internal
+      no_proxy: localhost,127.0.0.1,::1,api,web,worker-base,host.docker.internal
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    depends_on:
+      - worker-base
+    volumes:
+      - ./storage:/workspace/storage
+      - C:/:/hostfs/c
+      - D:/:/hostfs/d
+      - ${RADELFT_DATASET_ROOT:-D:/Datasets/RaDelft}:/workspace-data/radelft
+      - ${RORAD_DATASET_ROOT:-D:/Datasets/RoRad}:/workspace-data/rorad:ro
+
+  worker-base:
+    build:
+      context: .
+      dockerfile: services/workers/base/Dockerfile
+      args: *build_proxy_args
+    environment:
+      WORKER_HOST: 0.0.0.0
+      WORKER_PORT: 8010
+      WORKER_SOURCE_ROOT: /workspace/services/workers/base
+      OPENPCDET_SOURCE_ROOT: /workspace/services/workers/base/openpcdet
+      OPENPCDET_ASSETS_ROOT: /workspace/services/workers/base/openpcdet/assets
+      YOLO_SOURCE_ROOT: /workspace/services/workers/base/yolo
+      YOLO_ASSETS_ROOT: /workspace/services/workers/base/yolo/assets
+      DEFAULT_MODEL_PROFILE_ID: pv_rcnn_kitti
+      NO_PROXY: localhost,127.0.0.1,::1,api,web,worker-base,host.docker.internal
+      no_proxy: localhost,127.0.0.1,::1,api,web,worker-base,host.docker.internal
+    gpus: all
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    volumes:
+      - ./services/workers/base/worker_base:/workspace/services/workers/base/worker_base
+      - ./services/workers/base/openpcdet/app/main.py:/workspace/services/workers/base/openpcdet/app/main.py
+      - ./services/workers/base/openpcdet/app/model_profiles.py:/workspace/services/workers/base/openpcdet/app/model_profiles.py
+      - ./services/workers/base/openpcdet/tools/cfgs/kitti_models/pointpillar_rorad_mid360.yaml:/workspace/services/workers/base/openpcdet/tools/cfgs/kitti_models/pointpillar_rorad_mid360.yaml
+      - ./services/workers/base/yolo:/workspace/services/workers/base/yolo
+      - ./services/workers/base/openpcdet/pcdet/utils/spconv_utils.py:/workspace/services/workers/base/openpcdet/pcdet/utils/spconv_utils.py
+      - ./services/workers/base/openpcdet/pcdet/models/backbones_2d/base_bev_backbone.py:/workspace/services/workers/base/openpcdet/pcdet/models/backbones_2d/base_bev_backbone.py
+      - ./services/workers/base/openpcdet/pcdet/models/backbones_3d/vfe/dynamic_pillar_vfe.py:/workspace/services/workers/base/openpcdet/pcdet/models/backbones_3d/vfe/dynamic_pillar_vfe.py
+      - ./services/workers/base/openpcdet/pcdet/models/backbones_3d/vfe/dynamic_mean_vfe.py:/workspace/services/workers/base/openpcdet/pcdet/models/backbones_3d/vfe/dynamic_mean_vfe.py
+      - ./services/workers/base/openpcdet/assets:/workspace/services/workers/base/openpcdet/assets
+      - ./docs/images:/workspace/docs/images:ro
+      - ${RADELFT_DATASET_ROOT:-D:/Datasets/RaDelft}:/workspace-data/radelft:ro
+      - ${RORAD_DATASET_ROOT:-D:/Datasets/RoRad}:/workspace-data/rorad:ro
