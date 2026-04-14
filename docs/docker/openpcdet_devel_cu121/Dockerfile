@@ -44,6 +44,8 @@ RUN /opt/venv/bin/python -m pip install spconv-cu121
 
 RUN /opt/venv/bin/python -m pip install -r requirements.txt
 RUN /opt/venv/bin/python setup.py develop
+RUN /opt/venv/bin/python -m pip install ultralytics
+
 
 EXPOSE 8010
 

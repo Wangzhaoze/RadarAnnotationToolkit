@@ -11,12 +11,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0;10.0;12.0"
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
+ENV WORKER_SOURCE_ROOT=/workspace/services/workers/base
 ENV OPENPCDET_SOURCE_ROOT=/workspace/services/workers/base/openpcdet
 ENV OPENPCDET_ASSETS_ROOT=/workspace/services/workers/base/openpcdet/assets
+ENV YOLO_SOURCE_ROOT=/workspace/services/workers/base/yolo
+ENV YOLO_ASSETS_ROOT=/workspace/services/workers/base/yolo/assets
 ENV VIRTUAL_ENV=/opt/venv
 ENV XDG_RUNTIME_DIR=/tmp/runtime-root
 ENV PATH=/opt/venv/bin:$PATH
-ENV PYTHONPATH=/workspace/services/workers/base/openpcdet
+ENV PYTHONPATH=/workspace/services/workers/base:/workspace/services/workers/base/openpcdet
 
 WORKDIR /workspace/services/workers/base/openpcdet
 
@@ -38,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /tmp/runtime-root /workspace/services/workers/base/openpcdet/assets
-COPY services/workers/base/openpcdet /workspace/services/workers/base/openpcdet
+COPY services/workers/base /workspace/services/workers/base
 
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/python -m ensurepip --upgrade \
@@ -48,9 +51,10 @@ RUN /opt/venv/bin/python -m pip install torch torchvision torchaudio --index-url
 RUN /opt/venv/bin/python -m pip install spconv-cu126
 
 RUN /opt/venv/bin/python -m pip install -r requirements.txt
+RUN /opt/venv/bin/python -m pip install ultralytics
 
 RUN /opt/venv/bin/python setup.py develop
 
 EXPOSE 8010
 
-CMD ["/opt/venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010"]
+CMD ["/opt/venv/bin/python", "-m", "uvicorn", "worker_base.main:app", "--host", "0.0.0.0", "--port", "8010"]

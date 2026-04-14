@@ -53,7 +53,7 @@ services:
   worker-base:
     build:
       context: .
-      dockerfile: services/workers/base/Dockerfile
+      dockerfile: docs/docker/openpcdet_devel_cu128/Dockerfile
       args: *build_proxy_args
     environment:
       WORKER_HOST: 0.0.0.0
