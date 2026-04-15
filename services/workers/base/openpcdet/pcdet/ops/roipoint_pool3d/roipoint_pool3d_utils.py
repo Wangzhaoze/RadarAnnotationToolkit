@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/ops/roipoint_pool3d/roipoint_pool3d_utils.py
+
 import torch
 import torch.nn as nn
 from torch.autograd import Function

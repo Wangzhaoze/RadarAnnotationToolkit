@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/tools/test.py
+
 import _init_path
 import argparse
 import datetime

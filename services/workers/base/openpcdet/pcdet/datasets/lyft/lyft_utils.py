@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/lyft/lyft_utils.py
+
 """
 The Lyft data pre-processing and evaluation is modified from
 https://github.com/poodarchu/Det3D

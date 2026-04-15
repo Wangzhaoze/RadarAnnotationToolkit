@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/once/once_toolkits.py
+
 import json
 import os.path as osp
 from collections import defaultdict

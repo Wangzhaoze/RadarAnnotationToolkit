@@ -1,0 +1,55 @@
+{
+  "editor.tabCompletion": "on",
+  "psi-header.config": {
+    "forceToTop": true,
+    "author": "Zhaoze Wang",
+    "authorEmail": "",
+    "company": "Wangzhaoze",
+    "overridePathSeparator": "/"
+  },
+  "psi-header.changes-tracking": {
+    "isActive": true,
+    "autoHeader": "autoSave",
+    "enforceHeader": false,
+    "include": [
+      "python"
+    ],
+    "exclude": [
+      "markdown",
+      "json",
+      "jsonc",
+      "yaml",
+      "plaintext"
+    ]
+  },
+  "psi-header.lang-config": [
+    {
+      "language": "python",
+      "begin": "",
+      "end": "",
+      "prefix": "# ",
+      "rootDirFileName": "",
+      "forceToTop": true,
+      "blankLinesAfter": 1,
+      "beforeHeader": [
+        "#!/usr/bin/env python3",
+        "# -*- coding: utf-8 -*-"
+      ],
+      "afterHeader": []
+    }
+  ],
+  "psi-header.templates": [
+    {
+      "language": "python",
+      "template": [
+        "@Time    : <<dateformat('YYYY-MM-DD')>>",
+        "@Author  : Zhaoze Wang",
+        "@Site    : https://github.com/Wangzhaoze/RadarAnnotationToolkit",
+        "@File    : <<filerelativepath>>",
+        "@IDE     : vscode"
+      ]
+    }
+  ],
+  "python-envs.defaultEnvManager": "ms-python.python:conda",
+  "python-envs.defaultPackageManager": "ms-python.python:conda"
+}

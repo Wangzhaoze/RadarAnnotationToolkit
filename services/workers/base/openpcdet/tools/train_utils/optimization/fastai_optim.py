@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/tools/train_utils/optimization/fastai_optim.py
+
 # This file is modified from https://github.com/traveller59/second.pytorch
 
 try:

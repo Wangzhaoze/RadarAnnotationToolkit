@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/nuscenes/nuscenes_utils.py
+
 """
 The NuScenes data pre-processing and evaluation is modified from
 https://github.com/traveller59/second.pytorch and https://github.com/poodarchu/Det3D

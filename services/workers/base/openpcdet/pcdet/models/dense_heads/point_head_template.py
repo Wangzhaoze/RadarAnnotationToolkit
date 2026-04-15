@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/dense_heads/point_head_template.py
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

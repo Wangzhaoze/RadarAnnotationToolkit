@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/backbones_3d/focal_sparse_conv/SemanticSeg/sem_deeplabv3.py
+
 from collections import OrderedDict
 from pathlib import Path
 from torch import hub

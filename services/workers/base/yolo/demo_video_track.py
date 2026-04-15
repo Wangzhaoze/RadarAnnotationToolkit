@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# @Time    : 2026-04-15
+# @Author  : Zhaoze Wang
+# @Site    : https://github.com/Wangzhaoze/RadarAnnotationToolkit
+# @File    : services/workers/base/yolo/demo_video_track.py
+# @IDE     : vscode
+
 from ultralytics.models.sam import SAM3VideoSemanticPredictor
 
 # Initialize semantic video predictor

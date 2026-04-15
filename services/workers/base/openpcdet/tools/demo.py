@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/tools/demo.py
+
 import argparse
 import glob
 from pathlib import Path

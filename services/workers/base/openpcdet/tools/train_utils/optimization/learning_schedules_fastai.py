@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/tools/train_utils/optimization/learning_schedules_fastai.py
+
 # This file is modified from https://github.com/traveller59/second.pytorch
 
 import math

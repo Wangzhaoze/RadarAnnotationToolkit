@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/processor/point_feature_encoder.py
+
 import numpy as np
 
 

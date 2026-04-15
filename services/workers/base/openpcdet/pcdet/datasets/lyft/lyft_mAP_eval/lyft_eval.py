@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/lyft/lyft_mAP_eval/lyft_eval.py
+
 """
 modified from lyft toolkit https://github.com/lyft/nuscenes-devkit.git
 """

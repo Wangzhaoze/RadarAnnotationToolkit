@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/backbones_3d/vfe/__init__.py
+
 from .mean_vfe import MeanVFE
 from .pillar_vfe import PillarVFE
 from .dynamic_mean_vfe import DynamicMeanVFE

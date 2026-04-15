@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/backbones_3d/focal_sparse_conv/SemanticSeg/basic_blocks.py
+
 import torch.nn as nn
 
 class BasicBlock1D(nn.Module):

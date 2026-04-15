@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/detectors/second_net_iou.py
+
 import torch
 from .detector3d_template import Detector3DTemplate
 from ..model_utils.model_nms_utils import class_agnostic_nms

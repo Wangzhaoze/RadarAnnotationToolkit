@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/kitti/kitti_object_eval_python/kitti_common.py
+
 import concurrent.futures as futures
 import os
 import pathlib

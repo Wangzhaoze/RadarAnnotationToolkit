@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/tools/pcd2bin.py
+
 #
 # Module:       pcd2bin.py
 # Description:  .pcd to .bin converter

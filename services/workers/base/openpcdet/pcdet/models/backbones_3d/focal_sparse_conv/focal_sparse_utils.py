@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/backbones_3d/focal_sparse_conv/focal_sparse_utils.py
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

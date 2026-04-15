@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/augmentor/data_augmentor.py
+
 from functools import partial
 
 import numpy as np

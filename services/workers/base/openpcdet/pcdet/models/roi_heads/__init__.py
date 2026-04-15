@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/roi_heads/__init__.py
+
 from .partA2_head import PartA2FCHead
 from .pointrcnn_head import PointRCNNHead
 from .pvrcnn_head import PVRCNNHead

@@ -1,8 +1,11 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/kitti/kitti_object_eval_python/evaluate.py
+
 import time
 
 import fire
 
-import .kitti_common as kitti
+from . import kitti_common as kitti
 from .eval import get_coco_eval_result, get_official_eval_result
 
 

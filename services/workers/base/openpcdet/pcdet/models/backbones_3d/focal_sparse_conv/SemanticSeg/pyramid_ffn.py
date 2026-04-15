@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/backbones_3d/focal_sparse_conv/SemanticSeg/pyramid_ffn.py
+
 import torch
 import torch.nn as nn
 from .basic_blocks import BasicBlock2D

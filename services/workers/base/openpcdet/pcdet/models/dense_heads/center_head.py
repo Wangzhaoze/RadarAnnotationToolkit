@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/dense_heads/center_head.py
+
 import copy
 import numpy as np
 import torch

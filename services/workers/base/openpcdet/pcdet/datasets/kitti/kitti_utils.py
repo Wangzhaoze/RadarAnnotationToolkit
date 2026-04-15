@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/kitti/kitti_utils.py
+
 import numpy as np
 from ...utils import box_utils
 

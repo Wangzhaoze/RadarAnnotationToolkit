@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/ops/iou3d_nms/iou3d_nms_utils.py
+
 """
 3D IoU Calculation and Rotated NMS
 Written by Shaoshuai Shi

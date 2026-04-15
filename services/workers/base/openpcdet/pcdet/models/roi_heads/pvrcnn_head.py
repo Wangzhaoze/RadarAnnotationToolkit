@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/roi_heads/pvrcnn_head.py
+
 import torch.nn as nn
 
 from ...ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules

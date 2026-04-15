@@ -1,11 +1,18 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# @Time    : 2026-04-15
+# @Author  : Zhaoze Wang
+# @Site    : https://github.com/Wangzhaoze/RadarAnnotationToolkit
+# @File    : services/api/app/services/job_manager.py
+# @IDE     : vscode
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,7 +22,6 @@ from fastapi import WebSocket
 from app.models import AutoLabelModelCatalog, AutoLabelRequest, Box3D, JobStatus, TrackingReadinessResponse, TrackingRequest
 from app.services.annotation_store import AnnotationStore
 from app.services.dataset_registry import DatasetRegistry
-from app.services.tracking_service import FrameTrackingInput, TrackingCancelled, TrackingConfig, TrackingService
 
 logger = logging.getLogger("radar-annotation-toolkit.jobs")
 
@@ -24,24 +30,6 @@ logger = logging.getLogger("radar-annotation-toolkit.jobs")
 class JobControl:
     pause_requested: bool = False
     cancel_requested: bool = False
-
-
-@dataclass
-class TrackingAssociationProgress:
-    completed_frames: int = 0
-    total_frames: int = 0
-    current_frame: int | None = None
-    _lock: threading.Lock = field(default_factory=threading.Lock)
-
-    def update(self, completed_frames: int, total_frames: int, current_frame: int) -> None:
-        with self._lock:
-            self.completed_frames = completed_frames
-            self.total_frames = total_frames
-            self.current_frame = current_frame
-
-    def snapshot(self) -> tuple[int, int, int | None]:
-        with self._lock:
-            return self.completed_frames, self.total_frames, self.current_frame
 
 
 class JobManager:
@@ -64,7 +52,6 @@ class JobManager:
         self.tasks: dict[str, asyncio.Task[None]] = {}
         self.connections: dict[str, list[WebSocket]] = {}
         self.worker_retries = 12
-        self.tracking_service = TrackingService()
         self._load_jobs()
 
     async def set_jobs_root(self, jobs_root: str) -> None:
@@ -470,25 +457,26 @@ class JobManager:
             job.message = f"Preparing tracking inputs for frames {request.start_frame}-{request.end_frame}"
             await self._broadcast(job)
 
-            tracking_config = TrackingConfig(
-                method=request.method,
-                input_score_threshold=request.input_score_threshold,
-                max_gap_frames=request.max_gap_frames,
-                max_track_lost_frames=request.max_track_lost_frames,
-                match_distance_xy=request.match_distance_xy,
-                match_z_delta=request.match_z_delta,
-            )
-            frame_inputs: list[FrameTrackingInput] = []
+            tracking_config = {
+                "method": request.method,
+                "input_score_threshold": request.input_score_threshold,
+                "max_gap_frames": request.max_gap_frames,
+                "max_track_lost_frames": request.max_track_lost_frames,
+                "match_distance_xy": request.match_distance_xy,
+                "match_z_delta": request.match_z_delta,
+            }
+            frame_inputs: list[dict] = []
             for offset, frame_index in enumerate(range(request.start_frame, request.end_frame + 1), start=1):
                 if await self._finish_if_cancelled(job, control):
                     return
                 frame_summary = sequence.adapter.get_frame_summary(frame_index)
+                annotations = self.annotation_store.get_annotations(request.sequence_id, frame_index)
                 frame_inputs.append(
-                    FrameTrackingInput(
-                        frame_index=frame_index,
-                        timestamp=float(frame_summary["timestamp"]),
-                        annotations=self.annotation_store.get_annotations(request.sequence_id, frame_index),
-                    )
+                    {
+                        "frame_index": frame_index,
+                        "timestamp": float(frame_summary["timestamp"]),
+                        "annotations": [annotation.model_dump(mode="json") for annotation in annotations],
+                    }
                 )
                 job.processed_frames = offset
                 job.progress = self._tracking_progress("preparing_inputs", offset, job.total_frames)
@@ -499,58 +487,82 @@ class JobManager:
             if await self._finish_if_cancelled(job, control):
                 return
 
-            association_progress = TrackingAssociationProgress(total_frames=job.total_frames)
-            cancel_event = threading.Event()
-            association_task = asyncio.create_task(
-                asyncio.to_thread(
-                    self.tracking_service.track,
-                    frame_inputs,
-                    tracking_config,
-                    progress_callback=association_progress.update,
-                    cancel_event=cancel_event,
+            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+                worker_job_response = await self._request_worker(
+                    client,
+                    "POST",
+                    "/tracking/jobs",
+                    job=job,
+                    json={
+                        "config": tracking_config,
+                        "frames": frame_inputs,
+                    },
                 )
-            )
-            try:
+                worker_tracking_job_id = worker_job_response.json()["job_id"]
+
                 job.stage = "associating_tracks"
                 job.processed_frames = 0
                 job.progress = self._tracking_progress("associating_tracks", 0, job.total_frames)
                 job.current_frame = request.start_frame
-                job.message = f"Associating tracks (0/{job.total_frames})"
+                job.message = f"Associating tracks in worker-base (0/{job.total_frames})"
                 await self._broadcast(job)
-                last_snapshot: tuple[int, int, int | None] | None = (0, 0, None)
-                association_poll_interval = 0.05
-                while not association_task.done():
+
+                last_snapshot: tuple[str, int, int | None] | None = None
+                association_poll_interval = 0.1
+                while True:
                     if control.cancel_requested:
-                        cancel_event.set()
-                    snapshot = association_progress.snapshot()
-                    if snapshot == last_snapshot:
-                        await asyncio.sleep(association_poll_interval)
-                        continue
-                    last_snapshot = snapshot
-                    completed_frames, total_frames, current_frame = snapshot
-                    total_frames = total_frames or job.total_frames
-                    job.stage = "associating_tracks"
-                    job.processed_frames = completed_frames
-                    job.progress = self._tracking_progress("associating_tracks", completed_frames, total_frames)
-                    job.current_frame = current_frame if current_frame is not None else request.start_frame
-                    job.message = f"Associating tracks ({completed_frames}/{job.total_frames})"
-                    await self._broadcast(job)
+                        await self._request_worker(
+                            client,
+                            "POST",
+                            f"/tracking/jobs/{worker_tracking_job_id}/cancel",
+                            job=job,
+                        )
+                        if await self._finish_if_cancelled(job, control):
+                            return
+                    status_response = await self._request_worker(
+                        client,
+                        "GET",
+                        f"/tracking/jobs/{worker_tracking_job_id}",
+                        job=job,
+                    )
+                    status_payload = status_response.json()
+                    worker_status = status_payload["status"]
+                    completed_frames = int(status_payload.get("completed_frames") or 0)
+                    total_frames = int(status_payload.get("total_frames") or job.total_frames)
+                    current_frame = status_payload.get("current_frame")
+                    snapshot = (worker_status, completed_frames, current_frame)
+                    if snapshot != last_snapshot:
+                        last_snapshot = snapshot
+                        job.stage = "associating_tracks"
+                        job.processed_frames = completed_frames
+                        job.progress = self._tracking_progress("associating_tracks", completed_frames, total_frames)
+                        job.current_frame = current_frame if current_frame is not None else request.start_frame
+                        job.message = f"Associating tracks in worker-base ({completed_frames}/{job.total_frames})"
+                        await self._broadcast(job)
+                    if worker_status == "completed":
+                        break
+                    if worker_status == "failed":
+                        raise RuntimeError(status_payload.get("error") or "Worker tracking failed")
+                    if worker_status == "cancelled":
+                        if await self._finish_if_cancelled(job, control):
+                            return
+                        raise RuntimeError("Worker tracking was cancelled")
                     await asyncio.sleep(association_poll_interval)
-                snapshot = association_progress.snapshot()
-                if snapshot != last_snapshot:
-                    completed_frames, total_frames, current_frame = snapshot
-                    total_frames = total_frames or job.total_frames
-                    job.stage = "associating_tracks"
-                    job.processed_frames = completed_frames
-                    job.progress = self._tracking_progress("associating_tracks", completed_frames, total_frames)
-                    job.current_frame = current_frame if current_frame is not None else request.start_frame
-                    job.message = f"Associating tracks ({completed_frames}/{job.total_frames})"
-                    await self._broadcast(job)
-                tracked_annotations = await association_task
-            except TrackingCancelled:
-                if await self._finish_if_cancelled(job, control):
-                    return
-                raise
+
+                result_response = await self._request_worker(
+                    client,
+                    "GET",
+                    f"/tracking/jobs/{worker_tracking_job_id}/result",
+                    job=job,
+                )
+                result_payload = result_response.json()
+                tracked_annotations = {
+                    int(frame_result["frame_index"]): [
+                        Box3D.model_validate(annotation)
+                        for annotation in frame_result.get("annotations", [])
+                    ]
+                    for frame_result in result_payload.get("results", [])
+                }
 
             if await self._finish_if_cancelled(job, control):
                 return

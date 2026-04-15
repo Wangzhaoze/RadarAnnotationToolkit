@@ -1,13 +1,22 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# @Time    : 2026-04-15
+# @Author  : Zhaoze Wang
+# @Site    : https://github.com/Wangzhaoze/RadarAnnotationToolkit
+# @File    : services/workers/base/tracking/service.py
+# @IDE     : vscode
+
 from __future__ import annotations
 
 import math
 import threading
 from dataclasses import dataclass, field
 from typing import Callable, Literal
+from uuid import uuid4
 
 import numpy as np
+from pydantic import BaseModel, Field, model_validator
 
-from app.models import Box3D, Vector3
 
 TRACKING_CLASS_CONFIG = {
     "vehicle": {"max_distance_xy": 4.5, "max_z_delta": 2.0},
@@ -24,50 +33,160 @@ class TrackingCancelled(RuntimeError):
     pass
 
 
-@dataclass(frozen=True)
-class TrackingConfig:
+class Vector3(BaseModel):
+    x: float
+    y: float
+    z: float
+
+
+class TrackingBox3D(BaseModel):
+    id: str
+    class_name: str
+    score: float = 0.0
+    center: Vector3
+    size: Vector3
+    yaw: float = 0.0
+    source_model: str = "manual"
+    coord_frame: Literal["lidar"] = "lidar"
+    track_id: str | None = None
+    source_stage: Literal["manual", "detected", "interpolated"] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_tracking_defaults(cls, value):
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        if payload.get("source_stage") is None:
+            payload["source_stage"] = "manual" if payload.get("source_model") == "manual" else "detected"
+        if "track_id" not in payload:
+            payload["track_id"] = None
+        return payload
+
+
+class TrackingConfig(BaseModel):
     method: TrackingMethod = "greedy_cv"
-    input_score_threshold: float | None = None
-    max_gap_frames: int = 2
-    max_track_lost_frames: int = 2
-    match_distance_xy: float | None = None
-    match_z_delta: float | None = None
+    input_score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    max_gap_frames: int = Field(default=2, ge=0)
+    max_track_lost_frames: int = Field(default=2, ge=0)
+    match_distance_xy: float | None = Field(default=None, gt=0.0)
+    match_z_delta: float | None = Field(default=None, gt=0.0)
 
 
-@dataclass
-class FrameTrackingInput:
+class TrackingFrameInput(BaseModel):
     frame_index: int
     timestamp: float
-    annotations: list[Box3D]
+    annotations: list[TrackingBox3D]
+
+
+class TrackingJobCreateRequest(BaseModel):
+    config: TrackingConfig = Field(default_factory=TrackingConfig)
+    frames: list[TrackingFrameInput]
+
+
+class TrackingFrameResult(BaseModel):
+    frame_index: int
+    annotations: list[TrackingBox3D]
+
+
+class TrackingJobStatusResponse(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    total_frames: int
+    completed_frames: int = 0
+    current_frame: int | None = None
+    error: str | None = None
+
+
+class TrackingJobResultResponse(BaseModel):
+    job_id: str
+    method: TrackingMethod
+    results: list[TrackingFrameResult]
 
 
 @dataclass
 class TrackObservation:
     frame_index: int
     timestamp: float
-    annotation: Box3D
+    annotation: TrackingBox3D
 
 
 @dataclass
 class TrackState:
     track_id: str
     class_name: str
-    last_annotation: Box3D
+    last_annotation: TrackingBox3D
     last_frame_index: int
     last_timestamp: float
     velocity_xy: np.ndarray = field(default_factory=lambda: np.zeros(2, dtype=np.float32))
     observations: list[TrackObservation] = field(default_factory=list)
 
 
+@dataclass
+class WorkerTrackingJob:
+    job_id: str
+    request: TrackingJobCreateRequest
+    cancel_event: threading.Event = field(default_factory=threading.Event)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    status: Literal["queued", "running", "completed", "failed", "cancelled"] = "queued"
+    completed_frames: int = 0
+    current_frame: int | None = None
+    error: str | None = None
+    result: TrackingJobResultResponse | None = None
+
+    @property
+    def total_frames(self) -> int:
+        return len(self.request.frames)
+
+    def snapshot(self) -> TrackingJobStatusResponse:
+        with self.lock:
+            return TrackingJobStatusResponse(
+                job_id=self.job_id,
+                status=self.status,
+                total_frames=self.total_frames,
+                completed_frames=self.completed_frames,
+                current_frame=self.current_frame,
+                error=self.error,
+            )
+
+    def update_progress(self, completed_frames: int, total_frames: int, current_frame: int) -> None:
+        with self.lock:
+            self.completed_frames = completed_frames
+            self.current_frame = current_frame
+
+    def mark_running(self) -> None:
+        with self.lock:
+            self.status = "running"
+
+    def mark_completed(self, result: TrackingJobResultResponse) -> None:
+        with self.lock:
+            self.status = "completed"
+            self.completed_frames = self.total_frames
+            self.current_frame = None
+            self.result = result
+
+    def mark_failed(self, exc: Exception) -> None:
+        with self.lock:
+            self.status = "failed"
+            self.current_frame = None
+            self.error = str(exc).strip() or exc.__class__.__name__
+
+    def mark_cancelled(self) -> None:
+        with self.lock:
+            self.status = "cancelled"
+            self.current_frame = None
+            self.error = None
+
+
 class TrackingService:
     def track(
         self,
-        frames: list[FrameTrackingInput],
+        frames: list[TrackingFrameInput],
         config: TrackingConfig,
         *,
         progress_callback: TrackingProgressCallback | None = None,
         cancel_event: threading.Event | None = None,
-    ) -> dict[int, list[Box3D]]:
+    ) -> dict[int, list[TrackingBox3D]]:
         if config.method == "greedy_cv":
             return self._track_greedy_cv(
                 frames,
@@ -79,12 +198,12 @@ class TrackingService:
 
     def _track_greedy_cv(
         self,
-        frames: list[FrameTrackingInput],
+        frames: list[TrackingFrameInput],
         config: TrackingConfig,
         *,
         progress_callback: TrackingProgressCallback | None = None,
         cancel_event: threading.Event | None = None,
-    ) -> dict[int, list[Box3D]]:
+    ) -> dict[int, list[TrackingBox3D]]:
         frame_results = {frame.frame_index: [] for frame in frames}
         active_tracks: dict[str, list[TrackState]] = {}
         all_tracks: list[TrackState] = []
@@ -138,9 +257,7 @@ class TrackingService:
                     observation.annotation.model_copy(
                         update={
                             "track_id": track.track_id,
-                            "source_stage": "manual"
-                            if observation.annotation.source_model == "manual"
-                            else "detected",
+                            "source_stage": "manual" if observation.annotation.source_model == "manual" else "detected",
                         }
                     )
                 )
@@ -149,6 +266,7 @@ class TrackingService:
                 if gap <= 0 or gap > config.max_gap_frames:
                     continue
                 for offset in range(1, gap + 1):
+                    self._ensure_not_cancelled(cancel_event)
                     missing_frame = previous.frame_index + offset
                     alpha = offset / (gap + 1)
                     frame_results[missing_frame].append(
@@ -163,8 +281,8 @@ class TrackingService:
 
         return frame_results
 
-    def _group_detections(self, annotations: list[Box3D], config: TrackingConfig) -> dict[str, list[Box3D]]:
-        grouped: dict[str, list[Box3D]] = {}
+    def _group_detections(self, annotations: list[TrackingBox3D], config: TrackingConfig) -> dict[str, list[TrackingBox3D]]:
+        grouped: dict[str, list[TrackingBox3D]] = {}
         for annotation in annotations:
             if annotation.source_model == "manual" or annotation.source_stage == "interpolated":
                 continue
@@ -177,7 +295,7 @@ class TrackingService:
         self,
         *,
         class_tracks: list[TrackState],
-        detections: list[Box3D],
+        detections: list[TrackingBox3D],
         frame_index: int,
         timestamp: float,
         config: TrackingConfig,
@@ -221,7 +339,7 @@ class TrackingService:
         class_name: str,
         frame_index: int,
         timestamp: float,
-        detection: Box3D,
+        detection: TrackingBox3D,
     ) -> TrackState:
         track_id = f"trk-{track_number:05d}"
         return TrackState(
@@ -239,7 +357,7 @@ class TrackingService:
         track: TrackState,
         frame_index: int,
         timestamp: float,
-        detection: Box3D,
+        detection: TrackingBox3D,
     ) -> None:
         previous_xy = np.asarray([track.last_annotation.center.x, track.last_annotation.center.y], dtype=np.float32)
         current_xy = np.asarray([detection.center.x, detection.center.y], dtype=np.float32)
@@ -248,13 +366,7 @@ class TrackingService:
         track.last_annotation = detection
         track.last_frame_index = frame_index
         track.last_timestamp = timestamp
-        track.observations.append(
-            TrackObservation(
-                frame_index=frame_index,
-                timestamp=timestamp,
-                annotation=detection,
-            )
-        )
+        track.observations.append(TrackObservation(frame_index=frame_index, timestamp=timestamp, annotation=detection))
 
     def _predict_xy(self, track: TrackState, timestamp: float) -> np.ndarray:
         delta_t = max(timestamp - track.last_timestamp, 0.0)
@@ -275,7 +387,7 @@ class TrackingService:
         class_config = TRACKING_CLASS_CONFIG.get(class_name.lower(), DEFAULT_TRACKING_CONFIG)
         return float(class_config["max_z_delta"])
 
-    def _size_delta(self, previous: Box3D, current: Box3D) -> float:
+    def _size_delta(self, previous: TrackingBox3D, current: TrackingBox3D) -> float:
         previous_size = np.asarray([previous.size.x, previous.size.y, previous.size.z], dtype=np.float32)
         current_size = np.asarray([current.size.x, current.size.y, current.size.z], dtype=np.float32)
         baseline = np.maximum(previous_size, 1e-3)
@@ -285,11 +397,11 @@ class TrackingService:
         self,
         *,
         track_id: str,
-        previous: Box3D,
-        current: Box3D,
+        previous: TrackingBox3D,
+        current: TrackingBox3D,
         alpha: float,
         frame_index: int,
-    ) -> Box3D:
+    ) -> TrackingBox3D:
         previous_center = np.asarray([previous.center.x, previous.center.y, previous.center.z], dtype=np.float32)
         current_center = np.asarray([current.center.x, current.center.y, current.center.z], dtype=np.float32)
         previous_size = np.asarray([previous.size.x, previous.size.y, previous.size.z], dtype=np.float32)
@@ -298,7 +410,7 @@ class TrackingService:
         size = previous_size + (current_size - previous_size) * alpha
         yaw = self._interpolate_angle(previous.yaw, current.yaw, alpha)
 
-        return Box3D(
+        return TrackingBox3D(
             id=f"{track_id}-interp-{frame_index:06d}",
             class_name=previous.class_name,
             score=min(previous.score, current.score),
@@ -318,3 +430,68 @@ class TrackingService:
     def _ensure_not_cancelled(self, cancel_event: threading.Event | None) -> None:
         if cancel_event is not None and cancel_event.is_set():
             raise TrackingCancelled("Tracking cancelled")
+
+
+class TrackingEngine:
+    def __init__(self) -> None:
+        self._service = TrackingService()
+        self._jobs: dict[str, WorkerTrackingJob] = {}
+        self._lock = threading.Lock()
+
+    def create_job(self, request: TrackingJobCreateRequest) -> TrackingJobStatusResponse:
+        job = WorkerTrackingJob(job_id=str(uuid4()), request=request)
+        with self._lock:
+            self._jobs[job.job_id] = job
+        thread = threading.Thread(target=self._run_job, args=(job,), name=f"tracking-{job.job_id}", daemon=True)
+        thread.start()
+        return job.snapshot()
+
+    def get_status(self, job_id: str) -> TrackingJobStatusResponse:
+        return self._get_job(job_id).snapshot()
+
+    def cancel(self, job_id: str) -> TrackingJobStatusResponse:
+        job = self._get_job(job_id)
+        job.cancel_event.set()
+        return job.snapshot()
+
+    def get_result(self, job_id: str) -> TrackingJobResultResponse:
+        job = self._get_job(job_id)
+        with job.lock:
+            if job.status != "completed" or job.result is None:
+                raise RuntimeError(f"Tracking job is not completed: {job.status}")
+            return job.result
+
+    def _get_job(self, job_id: str) -> WorkerTrackingJob:
+        with self._lock:
+            job = self._jobs.get(job_id)
+        if job is None:
+            raise KeyError(job_id)
+        return job
+
+    def _run_job(self, job: WorkerTrackingJob) -> None:
+        try:
+            job.mark_running()
+            tracked = self._service.track(
+                job.request.frames,
+                job.request.config,
+                progress_callback=job.update_progress,
+                cancel_event=job.cancel_event,
+            )
+            results = [
+                TrackingFrameResult(frame_index=frame.frame_index, annotations=tracked.get(frame.frame_index, []))
+                for frame in job.request.frames
+            ]
+            job.mark_completed(
+                TrackingJobResultResponse(
+                    job_id=job.job_id,
+                    method=job.request.config.method,
+                    results=results,
+                )
+            )
+        except TrackingCancelled:
+            job.mark_cancelled()
+        except Exception as exc:
+            job.mark_failed(exc)
+
+
+engine = TrackingEngine()

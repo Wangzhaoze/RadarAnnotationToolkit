@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/tools/visual_utils/visualize_utils.py
+
 import mayavi.mlab as mlab
 import numpy as np
 import torch

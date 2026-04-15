@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/ops/pointnet2/pointnet2_stack/voxel_pool_modules.py
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

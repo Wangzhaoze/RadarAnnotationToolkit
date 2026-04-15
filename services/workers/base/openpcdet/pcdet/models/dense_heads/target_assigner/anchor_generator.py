@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/dense_heads/target_assigner/anchor_generator.py
+
 import torch
 
 

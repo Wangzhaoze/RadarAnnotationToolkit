@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# @Time    : 2026-04-15
+# @Author  : Zhaoze Wang
+# @Site    : https://github.com/Wangzhaoze/RadarAnnotationToolkit
+# @File    : services/api/app/services/dataset_registry.py
+# @IDE     : vscode
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,6 +17,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from app.adapters.base import DatasetAdapter
 from app.adapters.coloradarplus import ColoradarPlusAdapter
+from app.adapters.hella_aeva import HellaAevaAdapter
 from app.adapters.radelft import RaDelftAdapter
 from app.adapters.rorad import RoRadAdapter
 from app.models import (
@@ -126,6 +135,8 @@ class DatasetRegistry:
             return RaDelftAdapter(config)
         if config.adapter == "rorad":
             return RoRadAdapter(config)
+        if config.adapter == "hella_aeva":
+            return HellaAevaAdapter(config)
         raise ValueError(f"Unsupported adapter: {config.adapter}")
 
     def _discover_dataset_definitions(self) -> dict[str, DatasetDefinitionSpec]:

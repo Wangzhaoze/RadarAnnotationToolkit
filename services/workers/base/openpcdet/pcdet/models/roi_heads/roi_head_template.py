@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/roi_heads/roi_head_template.py
+
 import numpy as np
 import torch
 import torch.nn as nn

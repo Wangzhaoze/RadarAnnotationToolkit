@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/augmentor/augmentor_utils.py
+
 import numpy as np
 import math
 import copy

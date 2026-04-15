@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/utils/commu_utils.py
+
 """
 This file contains primitives for multi-gpu communication.
 This is useful when doing distributed training.

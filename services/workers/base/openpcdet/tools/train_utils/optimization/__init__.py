@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/tools/train_utils/optimization/__init__.py
+
 from functools import partial
 
 import torch.nn as nn

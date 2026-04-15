@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/backbones_2d/map_to_bev/height_compression.py
+
 import torch.nn as nn
 
 

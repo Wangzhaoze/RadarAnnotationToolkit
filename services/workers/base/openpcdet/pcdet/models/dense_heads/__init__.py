@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/dense_heads/__init__.py
+
 from .anchor_head_multi import AnchorHeadMulti
 from .anchor_head_single import AnchorHeadSingle
 from .anchor_head_template import AnchorHeadTemplate

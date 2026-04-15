@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/roi_heads/pointrcnn_head.py
+
 import torch
 import torch.nn as nn
 

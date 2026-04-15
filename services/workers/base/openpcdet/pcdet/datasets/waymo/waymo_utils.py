@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/waymo/waymo_utils.py
+
 # OpenPCDet PyTorch Dataloader and Evaluation Tools for Waymo Open Dataset
 # Reference https://github.com/open-mmlab/OpenPCDet
 # Written by Shaoshuai Shi, Chaoxu Guo

@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/model_utils/model_nms_utils.py
+
 import torch
 
 from ...ops.iou3d_nms import iou3d_nms_utils

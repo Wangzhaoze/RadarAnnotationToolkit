@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/detectors/mppnet.py
+
 import torch
 from .detector3d_template import Detector3DTemplate
 from pcdet.ops.iou3d_nms import iou3d_nms_utils

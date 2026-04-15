@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/model_utils/basic_block_2d.py
+
 import torch.nn as nn
 
 

@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/once/once_eval/iou_utils.py
+
 """
 Rotate IoU computation is referred from https://github.com/hongzhenwang/RRPN-revise
 """

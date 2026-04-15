@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/model_utils/mppnet_utils.py
+
 from os import getgrouplist
 import torch.nn as nn
 import torch

@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/ops/pointnet2/pointnet2_stack/voxel_query_utils.py
+
 import torch
 from torch.autograd import Variable
 from torch.autograd import Function

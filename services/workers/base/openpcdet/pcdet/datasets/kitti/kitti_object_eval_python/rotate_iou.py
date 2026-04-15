@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/kitti/kitti_object_eval_python/rotate_iou.py
+
 #####################
 # Based on https://github.com/hongzhenwang/RRPN-revise
 # Licensed under The MIT License

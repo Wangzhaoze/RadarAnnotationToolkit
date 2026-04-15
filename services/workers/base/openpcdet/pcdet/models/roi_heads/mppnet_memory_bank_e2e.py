@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/roi_heads/mppnet_memory_bank_e2e.py
+
 from typing import ValuesView
 import torch.nn as nn
 import torch

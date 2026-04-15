@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/model_utils/centernet_utils.py
+
 # This file is modified from https://github.com/tianweiy/CenterPoint
 
 import torch

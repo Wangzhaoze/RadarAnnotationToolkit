@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# @Time    : 2026-04-15
+# @Author  : Zhaoze Wang
+# @Site    : https://github.com/Wangzhaoze/RadarAnnotationToolkit
+# @File    : services/workers/base/openpcdet/app/model_profiles.py
+# @IDE     : vscode
+
 from __future__ import annotations
 
 import os
@@ -63,6 +71,19 @@ MODEL_PROFILES = {
         "ckpt_path": str(OPENPCDET_ASSETS_ROOT / "pointpillar_kitti.pth"),
         "class_names": KITTI_CLASS_NAMES,
         "preprocess_point_cloud_range": [-5.0, -35.0, -3.0, 61.56, 41.8, 2.0],
+        "default_score_threshold": 0.1,
+    },
+    "pointpillar_hella_aeva_anf": {
+        "id": "pointpillar_hella_aeva_anf",
+        "name": "OpenPCDet PointPillar (Hella_Aeva Aeva FMCW Experimental)",
+        "architecture": "PointPillar",
+        "framework": "OpenPCDet",
+        "weight_name": "pointpillar_kitti.pth",
+        "description": "Experimental Hella_Aeva/anf profile using the KITTI PointPillar checkpoint.",
+        "cfg_file": str(KITTI_CFG_ROOT / "pointpillar_hella_aeva_anf.yaml"),
+        "ckpt_path": str(OPENPCDET_ASSETS_ROOT / "pointpillar_kitti.pth"),
+        "class_names": KITTI_CLASS_NAMES,
+        "preprocess_point_cloud_range": [0.0, -40.96, -4.0, 122.88, 40.96, 6.0],
         "default_score_threshold": 0.1,
     },
     "second_kitti": {

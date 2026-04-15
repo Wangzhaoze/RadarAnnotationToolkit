@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/backbones_3d/vfe/dynamic_pillar_vfe.py
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

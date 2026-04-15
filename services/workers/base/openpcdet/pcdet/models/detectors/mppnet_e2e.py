@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/detectors/mppnet_e2e.py
+
 import torch
 import os
 import numpy as np

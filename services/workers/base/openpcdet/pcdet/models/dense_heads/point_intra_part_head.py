@@ -1,3 +1,6 @@
+# Reference: adapted from OpenPCDet.
+# Source: https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/models/dense_heads/point_intra_part_head.py
+
 import torch
 
 from ...utils import box_coder_utils, box_utils

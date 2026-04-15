@@ -34,6 +34,7 @@ services:
       APP_STATE_ROOT: /workspace/storage/app_state
       RADELFT_RAMAP_PREPROCESS_WORKERS: 6
       RORAD_DATASET_ROOT: /workspace-data/rorad
+      HELLA_AEVA_DATASET_ROOT: /workspace-data/hella_aeva
       WORKER_URL: http://worker-base:8010
       HOST_FILESYSTEM_ROOT: /hostfs
       NO_PROXY: localhost,127.0.0.1,::1,api,web,worker-base,host.docker.internal
@@ -49,6 +50,7 @@ services:
       - D:/:/hostfs/d
       - ${RADELFT_DATASET_ROOT:-D:/Datasets/RaDelft}:/workspace-data/radelft
       - ${RORAD_DATASET_ROOT:-D:/Datasets/RoRad}:/workspace-data/rorad:ro
+      - ${HELLA_AEVA_DATASET_ROOT:-D:/Datasets/Hella_Aeva}:/workspace-data/hella_aeva:ro
 
   worker-base:
     build:
@@ -72,9 +74,11 @@ services:
       - "8010:8010"
     volumes:
       - ./services/workers/base/worker_base:/workspace/services/workers/base/worker_base
+      - ./services/workers/base/tracking:/workspace/services/workers/base/tracking
       - ./services/workers/base/openpcdet/app/main.py:/workspace/services/workers/base/openpcdet/app/main.py
       - ./services/workers/base/openpcdet/app/model_profiles.py:/workspace/services/workers/base/openpcdet/app/model_profiles.py
       - ./services/workers/base/openpcdet/tools/cfgs/kitti_models/pointpillar_rorad_mid360.yaml:/workspace/services/workers/base/openpcdet/tools/cfgs/kitti_models/pointpillar_rorad_mid360.yaml
+      - ./services/workers/base/openpcdet/tools/cfgs/kitti_models/pointpillar_hella_aeva_anf.yaml:/workspace/services/workers/base/openpcdet/tools/cfgs/kitti_models/pointpillar_hella_aeva_anf.yaml
       - ./services/workers/base/yolo:/workspace/services/workers/base/yolo
       - ./services/workers/base/openpcdet/pcdet/utils/spconv_utils.py:/workspace/services/workers/base/openpcdet/pcdet/utils/spconv_utils.py
       - ./services/workers/base/openpcdet/pcdet/models/backbones_2d/base_bev_backbone.py:/workspace/services/workers/base/openpcdet/pcdet/models/backbones_2d/base_bev_backbone.py
@@ -84,3 +88,4 @@ services:
       - ./docs/images:/workspace/docs/images:ro
       - ${RADELFT_DATASET_ROOT:-D:/Datasets/RaDelft}:/workspace-data/radelft:ro
       - ${RORAD_DATASET_ROOT:-D:/Datasets/RoRad}:/workspace-data/rorad:ro
+      - ${HELLA_AEVA_DATASET_ROOT:-D:/Datasets/Hella_Aeva}:/workspace-data/hella_aeva:ro
