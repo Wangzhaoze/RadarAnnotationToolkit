@@ -1,4 +1,3 @@
-import { getAnnotationColor, hexToRgba } from "../lib/annotationColors";
 import NumberField from "./NumberField";
 import OptionalNumberField from "./OptionalNumberField";
 import SidebarSection from "./SidebarSection";
@@ -22,11 +21,9 @@ function formatProgressPercent(value, precise = false) {
   return precise ? `${clamped.toFixed(1)}%` : `${Math.round(clamped)}%`;
 }
 
-export default function AnnotateMenuPanel({
+export default function AutoLabelingMenuPanel({
   hasWorkspace,
   modelProfiles,
-  classNames,
-  sequence,
   selectedModelProfile,
   selectedModelProfileId,
   onSelectModelProfile,
@@ -56,29 +53,11 @@ export default function AnnotateMenuPanel({
   jobLaunchState,
   hasActiveJob,
   trackingReadiness,
-  annotations,
-  totalAnnotationCount,
-  hiddenAnnotationCount,
-  selectedAnnotationId,
-  onSelectAnnotation,
-  onUpdateAnnotation,
-  onCreateAnnotation,
-  onDeleteAnnotation,
-  onSaveSequence,
-  selectedAnnotation,
   capabilityReport,
-  transformMode,
-  onChangeTransformMode,
   expandedSectionId,
   onToggleSection
 }) {
-  const classOptions = classNames?.length
-    ? classNames
-    : sequence?.class_names?.length
-      ? sequence.class_names
-      : ["Car", "Pedestrian", "Cyclist"];
-  const datasetReady = hasWorkspace;
-  const canAnnotateBoxes = datasetReady && (capabilityReport?.can_annotate_3d_box ?? true);
+  const canAnnotateBoxes = hasWorkspace && (capabilityReport?.can_annotate_3d_box ?? true);
   const autoLabelJob = jobStatus?.task_name === "3D Tracking" ? null : jobStatus;
   const trackingJob = jobStatus?.task_name === "3D Tracking" ? jobStatus : null;
   const autoLabelLaunchState = jobLaunchState?.type === "auto-label" ? jobLaunchState : null;
@@ -117,41 +96,35 @@ export default function AnnotateMenuPanel({
           ? "frames written"
           : "frames handled";
 
-  const autoLabelSummary = !hasWorkspace
+  const detectionSummary = !hasWorkspace
     ? "Load a dataset first"
     : autoLabelLaunchState
       ? "Preparing..."
-    : autoLabelJob
-      ? `${autoLabelJob.status} - ${displayJobPercentLabel}`
-      : `${selectedModelProfile?.name || "No model"} - ${startFrame}-${endFrame}`;
+      : autoLabelJob
+        ? `${autoLabelJob.status} - ${displayJobPercentLabel}`
+        : `${selectedModelProfile?.name || "No model"} - ${startFrame}-${endFrame}`;
   const trackingSummary = !hasWorkspace
     ? "Load a dataset first"
     : trackingLaunchState
       ? "Preparing..."
-    : trackingJob
-      ? `${trackingJob.status} - ${trackingProgressPercentLabel}`
-      : trackingReady
-        ? `${trackingReadiness.annotated_frames}/${trackingReadiness.total_frames} ready`
-        : trackingReadiness?.next_missing_frame != null
-          ? `Locked - next ${trackingReadiness.next_missing_frame}`
-          : "Locked";
-  const manualLabelSummary = canAnnotateBoxes ? `Mode ${transformMode}` : "Locked";
-  const annotationSummary = hasWorkspace
-    ? `${annotations.length}/${totalAnnotationCount} visible`
-    : "No dataset loaded";
+      : trackingJob
+        ? `${trackingJob.status} - ${trackingProgressPercentLabel}`
+        : trackingReady
+          ? `${trackingReadiness.annotated_frames}/${trackingReadiness.total_frames} ready`
+          : trackingReadiness?.next_missing_frame != null
+            ? `Locked - next ${trackingReadiness.next_missing_frame}`
+            : "Locked";
 
   return (
     <>
       <SidebarSection
-        id="annotate-autolabel"
-        title="Auto Label"
-        summary={autoLabelSummary}
-        expanded={expandedSectionId === "annotate-autolabel"}
+        id="auto-labeling-3d-detection"
+        title="3D Object Detection"
+        summary={detectionSummary}
+        expanded={expandedSectionId === "auto-labeling-3d-detection"}
         onToggle={onToggleSection}
       >
         <div className="meta-grid">
-          <div>Task</div>
-          <strong>3D Object Detection</strong>
           <div>Framework</div>
           <strong>{selectedModelProfile?.framework || "-"}</strong>
           <div>Network</div>
@@ -180,15 +153,8 @@ export default function AnnotateMenuPanel({
         </label>
         <NumberField label="Start" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotateBoxes} />
         <NumberField label="End" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotateBoxes} />
-        <button
-          className="primary-button"
-          onClick={onRunAutoLabel}
-          disabled={!selectedModelProfile || hasActiveJob || !canAnnotateBoxes}
-        >
-          {autoLabelLaunchState ? "Preparing..." : hasActiveJob ? "Job Running" : "Run Auto Label"}
-        </button>
-        {!hasWorkspace ? <p className="panel-hint">Auto-label is unavailable until a dataset is loaded into the workspace.</p> : null}
-        {hasWorkspace && !canAnnotateBoxes ? <p className="panel-hint">Auto-label is unavailable until the dataset provides LiDAR frames.</p> : null}
+        {!hasWorkspace ? <p className="panel-hint">Auto-labeling is unavailable until a dataset is loaded into the workspace.</p> : null}
+        {hasWorkspace && !canAnnotateBoxes ? <p className="panel-hint">3D detection is unavailable until the dataset provides LiDAR frames.</p> : null}
         <p className="panel-hint">Tracking unlocks only after this whole frame range has been processed by frame-wise detection, including frames with zero boxes.</p>
         {autoLabelLaunchState ? (
           <div className="job-box">
@@ -245,13 +211,22 @@ export default function AnnotateMenuPanel({
             ) : null}
           </div>
         ) : null}
+        <div className="section-action-row">
+          <button
+            className="primary-button"
+            onClick={onRunAutoLabel}
+            disabled={!selectedModelProfile || hasActiveJob || !canAnnotateBoxes}
+          >
+            Run
+          </button>
+        </div>
       </SidebarSection>
 
       <SidebarSection
-        id="annotate-tracking"
+        id="auto-labeling-tracking"
         title="Tracking"
         summary={trackingSummary}
-        expanded={expandedSectionId === "annotate-tracking"}
+        expanded={expandedSectionId === "auto-labeling-tracking"}
         onToggle={onToggleSection}
       >
         <div className="meta-grid">
@@ -299,9 +274,6 @@ export default function AnnotateMenuPanel({
           disabled={!canAnnotateBoxes || hasActiveJob}
           onChange={onTrackingMatchZDeltaChange}
         />
-        <button className="primary-button" onClick={onRunTracking} disabled={!trackingReady || hasActiveJob || !canAnnotateBoxes}>
-          {trackingLaunchState ? "Preparing..." : hasActiveJob ? "Job Running" : "Run Tracking"}
-        </button>
         <p className="panel-hint">{trackingReadiness?.message || "Tracking is unavailable until frame-wise detection finishes for the selected range."}</p>
         <p className="panel-hint">Blank score or match thresholds fall back to no filtering or the built-in per-class gates.</p>
         {!trackingReady && trackingReadiness?.next_missing_frame != null ? (
@@ -354,112 +326,32 @@ export default function AnnotateMenuPanel({
             ) : null}
           </div>
         ) : null}
+        <div className="section-action-row">
+          <button className="primary-button" onClick={onRunTracking} disabled={!trackingReady || hasActiveJob || !canAnnotateBoxes}>
+            Run
+          </button>
+        </div>
       </SidebarSection>
 
       <SidebarSection
-        id="annotate-transform"
-        title="Manual Label"
-        summary={manualLabelSummary}
-        expanded={expandedSectionId === "annotate-transform"}
+        id="auto-labeling-2d-detection"
+        title="2D Object Detection"
+        summary="YOLO reserved"
+        expanded={expandedSectionId === "auto-labeling-2d-detection"}
         onToggle={onToggleSection}
       >
-        <div className="button-row">
-          {["translate", "rotate", "scale"].map((mode) => (
-            <button
-              key={mode}
-              className={transformMode === mode ? "active-toggle" : ""}
-              disabled={!canAnnotateBoxes}
-              onClick={() => onChangeTransformMode(mode)}
-            >
-              {mode}
-            </button>
-          ))}
+        <div className="meta-grid">
+          <div>Provider</div>
+          <strong>YOLO</strong>
+          <div>Status</div>
+          <strong>Worker ready, API task pending</strong>
+          <div>Output</div>
+          <strong>2D boxes / masks</strong>
         </div>
-        <p className="panel-hint">Visualize mode will pause auto-label and save the current annotation state before leaving this menu.</p>
-      </SidebarSection>
-
-      <SidebarSection
-        id="annotate-annotations"
-        title="Annotations"
-        summary={annotationSummary}
-        expanded={expandedSectionId === "annotate-annotations"}
-        onToggle={onToggleSection}
-      >
-        <div className="section-head">
-          <div className="button-row">
-            <button onClick={onCreateAnnotation} disabled={!canAnnotateBoxes}>
-              Add
-            </button>
-            <button onClick={onDeleteAnnotation} disabled={!selectedAnnotationId}>
-              Delete
-            </button>
-            <button onClick={onSaveSequence} disabled={!canAnnotateBoxes}>
-              Save
-            </button>
-          </div>
+        <p className="panel-hint">The worker-base YOLO provider exists, but this task is not connected to the API/Web job flow yet.</p>
+        <div className="section-action-row">
+          <button disabled>Run</button>
         </div>
-        <p className="annotation-summary">
-          Showing {annotations.length} / {totalAnnotationCount}
-          {hiddenAnnotationCount > 0 ? ` (${hiddenAnnotationCount} hidden below threshold)` : ""}
-        </p>
-        {!hasWorkspace ? <p className="panel-hint">No sequence is loaded yet, so there are no annotations to review.</p> : null}
-        <div className="annotation-list">
-          {annotations.map((annotation) => {
-            const annotationColor = getAnnotationColor(annotation.class_name, classOptions);
-            const isActive = annotation.id === selectedAnnotationId;
-            return (
-              <button
-                key={annotation.id}
-                className={`annotation-chip ${isActive ? "active" : ""}`}
-                style={{
-                  borderColor: hexToRgba(annotationColor, isActive ? 0.82 : 0.42),
-                  background: hexToRgba(annotationColor, isActive ? 0.22 : 0.08)
-                }}
-                onClick={() => onSelectAnnotation(annotation.id)}
-              >
-                <span className="annotation-chip-label">
-                  <span className="annotation-color-dot" style={{ backgroundColor: annotationColor }} />
-                  <span>{annotation.class_name}</span>
-                </span>
-                <span className="annotation-chip-meta">
-                  {annotation.track_id ? `${annotation.track_id} | ` : ""}
-                  {annotation.source_stage === "interpolated" ? "interp | " : ""}
-                  {annotation.score.toFixed(2)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {selectedAnnotation ? (
-          <div className="editor-form">
-            <label className="field-row">
-              <span>Class</span>
-              <select className="model-select" value={selectedAnnotation.class_name} onChange={(event) => onUpdateAnnotation(selectedAnnotation.id, { class_name: event.target.value })}>
-                {classOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <NumberField label="Score" value={selectedAnnotation.score} step={0.01} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { score: value })} />
-            <NumberField label="Center X" value={selectedAnnotation.center.x} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { center: { ...selectedAnnotation.center, x: value } })} />
-            <NumberField label="Center Y" value={selectedAnnotation.center.y} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { center: { ...selectedAnnotation.center, y: value } })} />
-            <NumberField label="Center Z" value={selectedAnnotation.center.z} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { center: { ...selectedAnnotation.center, z: value } })} />
-            <NumberField label="Size X" value={selectedAnnotation.size.x} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { size: { ...selectedAnnotation.size, x: value } })} />
-            <NumberField label="Size Y" value={selectedAnnotation.size.y} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { size: { ...selectedAnnotation.size, y: value } })} />
-            <NumberField label="Size Z" value={selectedAnnotation.size.z} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { size: { ...selectedAnnotation.size, z: value } })} />
-            <NumberField label="Yaw" value={selectedAnnotation.yaw} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { yaw: value })} />
-            <div className="field-row">
-              <span>Track</span>
-              <strong>{selectedAnnotation.track_id || "-"}</strong>
-            </div>
-            <div className="field-row">
-              <span>Stage</span>
-              <strong>{selectedAnnotation.source_stage || "-"}</strong>
-            </div>
-          </div>
-        ) : null}
       </SidebarSection>
     </>
   );

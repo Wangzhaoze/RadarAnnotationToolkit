@@ -452,7 +452,10 @@ export default function AppWorkbench() {
     }),
     [layerCapabilities]
   );
-  const isAnnotationMode = activeMenu === "annotate";
+  const isAutoLabelingMode = activeMenu === "auto-labeling";
+  const isManualLabelingMode = activeMenu === "manual-labeling";
+  const isLabelingMenu = isAutoLabelingMode || isManualLabelingMode;
+  const isAnnotationMode = isManualLabelingMode;
   const hasRunningJob = jobStatus ? ACTIVE_JOB_STATUSES.includes(jobStatus.status) : false;
   const hasActiveJob = hasRunningJob || Boolean(jobLaunchState);
   const capabilityReport = useMemo(() => buildCapabilityReport(timeline, frameDetail), [timeline, frameDetail]);
@@ -640,20 +643,23 @@ export default function AppWorkbench() {
     if (nextMenu === activeMenu || isMenuBusy) {
       return;
     }
-    if (activeMenu === "annotate" && nextMenu !== "annotate") {
+    const leavingLabelingMenu = isLabelingMenu && !["auto-labeling", "manual-labeling"].includes(nextMenu);
+    const leavingAutoLabeling = isAutoLabelingMode && nextMenu !== "auto-labeling";
+    const leavingManualLabeling = isManualLabelingMode && nextMenu !== "manual-labeling";
+    if (leavingLabelingMenu || leavingAutoLabeling || leavingManualLabeling) {
       setIsMenuBusy(true);
-      updateStatus("Saving annotation progress before leaving Annotate...");
+      updateStatus("Saving annotation progress before leaving labeling tools...");
       try {
-        if (jobStatus?.id && jobStatus.task_name !== "3D Tracking" && ["queued", "running"].includes(jobStatus.status)) {
+        if (leavingAutoLabeling && jobStatus?.id && jobStatus.task_name !== "3D Tracking" && ["queued", "running"].includes(jobStatus.status)) {
           const payload = await request(`/jobs/${jobStatus.id}/pause`, { method: "POST" });
           setJobStatus(payload);
-          logMessage("info", "Auto-label pause requested while switching to Visualize.");
+          logMessage("info", "Auto-label pause requested while leaving Auto Labeling.");
         }
         if (currentSequenceId) {
-          await persistAnnotationProgress("Saved annotation progress before leaving Annotate.");
+          await persistAnnotationProgress("Saved annotation progress before leaving labeling tools.");
         }
       } catch (error) {
-        logMessage("error", `Failed to preserve annotate state: ${error.message}`);
+        logMessage("error", `Failed to preserve labeling state: ${error.message}`);
       } finally {
         setIsMenuBusy(false);
       }
@@ -1209,7 +1215,7 @@ export default function AppWorkbench() {
   }, [jobStatus, currentSequenceId, frameIndex]);
 
   async function runAutoLabel() {
-    if (!currentSequenceId || !selectedModelProfile || !isAnnotationMode || hasActiveJob || jobLaunchLockRef.current) {
+    if (!currentSequenceId || !selectedModelProfile || !isAutoLabelingMode || hasActiveJob || jobLaunchLockRef.current) {
       return;
     }
     jobLaunchLockRef.current = true;
@@ -1246,7 +1252,7 @@ export default function AppWorkbench() {
   }
 
   async function runTracking() {
-    if (!currentSequenceId || !isAnnotationMode || hasActiveJob || jobLaunchLockRef.current) {
+    if (!currentSequenceId || !isAutoLabelingMode || hasActiveJob || jobLaunchLockRef.current) {
       return;
     }
     jobLaunchLockRef.current = true;
@@ -1581,7 +1587,7 @@ export default function AppWorkbench() {
               <h1>Select a dataset and scene in File before entering the workspace.</h1>
               <p>
                 The app now starts without loading data by default. Open `File`, choose one of the supported datasets and
-                scenes, click `Load`, then switch to `Visualize` or `Annotate`. Status, warnings, and request errors stay
+                scenes, click `Load`, then switch to `Show`, `Auto Labeling`, or `Manual Labeling`. Status, warnings, and request errors stay
                 docked in the bottom terminal.
               </p>
             </section>

@@ -12,3 +12,8 @@ dist/
 storage/annotations/*
 storage/app_state/*
 !storage/annotations/.gitkeep
+
+services/datasets/hella_aeva/*
+
+services/workers/base/PointNet/*
+services/workers/base/PromptDA/*

@@ -10,11 +10,13 @@ ARG no_proxy
 WORKDIR /workspace/services/api
 
 ENV PYTHONUNBUFFERED=1
+ENV DATASET_PLUGIN_ROOT=/workspace/services/datasets
 
 COPY services/api/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY services/api /workspace/services/api
+COPY services/datasets /workspace/services/datasets
 
 EXPOSE 8000
 

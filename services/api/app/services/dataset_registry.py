@@ -8,18 +8,15 @@
 
 from __future__ import annotations
 
+import importlib.util
+import os
 from dataclasses import dataclass
-from importlib import import_module
 from pathlib import Path
-from pkgutil import iter_modules
-from typing import Callable
+from types import ModuleType
+from typing import Callable, Type
 from uuid import NAMESPACE_URL, uuid5
 
 from app.adapters.base import DatasetAdapter
-from app.adapters.coloradarplus import ColoradarPlusAdapter
-from app.adapters.hella_aeva import HellaAevaAdapter
-from app.adapters.radelft import RaDelftAdapter
-from app.adapters.rorad import RoRadAdapter
 from app.models import (
     DatasetCatalogEntry,
     DatasetCatalogResponse,
@@ -29,6 +26,10 @@ from app.models import (
     SequenceTimelineResponse,
     TimelineFrame,
 )
+
+
+DEFAULT_DATASET_PLUGIN_ROOT = Path(__file__).resolve().parents[3] / "datasets"
+DATASET_PLUGIN_ROOT = Path(os.getenv("DATASET_PLUGIN_ROOT", str(DEFAULT_DATASET_PLUGIN_ROOT)))
 
 
 @dataclass
@@ -46,6 +47,7 @@ class DatasetDefinitionSpec:
     default_scene_id: str | None
     list_scenes: Callable[[], list[DatasetSceneOption]]
     build_config: Callable[[str], DatasetConfig]
+    adapter_class: Type[DatasetAdapter]
 
 
 class DatasetRegistry:
@@ -129,27 +131,34 @@ class DatasetRegistry:
         return str(uuid5(NAMESPACE_URL, identity))
 
     def _build_adapter(self, config: DatasetConfig) -> DatasetAdapter:
-        if config.adapter == "coloradarplus":
-            return ColoradarPlusAdapter(config)
-        if config.adapter == "radelft":
-            return RaDelftAdapter(config)
-        if config.adapter == "rorad":
-            return RoRadAdapter(config)
-        if config.adapter == "hella_aeva":
-            return HellaAevaAdapter(config)
-        raise ValueError(f"Unsupported adapter: {config.adapter}")
+        spec = self._dataset_definitions.get(config.adapter)
+        if spec is None:
+            raise ValueError(f"Unsupported adapter: {config.adapter}")
+        return spec.adapter_class(config)
 
     def _discover_dataset_definitions(self) -> dict[str, DatasetDefinitionSpec]:
-        adapter_root = Path(__file__).resolve().parent.parent / "adapters"
         definitions: dict[str, DatasetDefinitionSpec] = {}
-        for module_info in iter_modules([str(adapter_root)]):
-            if module_info.name.startswith("_") or module_info.name == "base":
+        if not DATASET_PLUGIN_ROOT.exists():
+            return definitions
+        for dataset_dir in sorted(DATASET_PLUGIN_ROOT.iterdir()):
+            if not dataset_dir.is_dir() or dataset_dir.name.startswith("_"):
                 continue
-            module = import_module(f"app.adapters.{module_info.name}")
+            dataset_module_path = dataset_dir / "dataset.py"
+            if not dataset_module_path.exists():
+                continue
+            module = self._load_dataset_module(dataset_dir.name, dataset_module_path)
             definition = getattr(module, "DATASET_DEFINITION", None)
             list_scenes = getattr(module, "list_dataset_scenes", None)
             build_config = getattr(module, "build_dataset_config", None)
-            if not isinstance(definition, dict) or not callable(list_scenes) or not callable(build_config):
+            adapter_class = getattr(module, "ADAPTER_CLASS", None)
+            if (
+                not isinstance(definition, dict)
+                or not callable(list_scenes)
+                or not callable(build_config)
+                or adapter_class is None
+                or not isinstance(adapter_class, type)
+                or not issubclass(adapter_class, DatasetAdapter)
+            ):
                 continue
             dataset_id = str(definition.get("id") or "").strip()
             name = str(definition.get("name") or dataset_id).strip()
@@ -162,8 +171,18 @@ class DatasetRegistry:
                 default_scene_id=definition.get("default_scene_id"),
                 list_scenes=list_scenes,
                 build_config=build_config,
+                adapter_class=adapter_class,
             )
         return dict(sorted(definitions.items(), key=lambda item: item[1].name.lower()))
+
+    def _load_dataset_module(self, dataset_id: str, dataset_module_path: Path) -> ModuleType:
+        module_name = f"radar_annotation_dataset_{dataset_id}"
+        spec = importlib.util.spec_from_file_location(module_name, dataset_module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Unable to load dataset plugin: {dataset_module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
     def _catalog_entry_from_spec(self, spec: DatasetDefinitionSpec) -> DatasetCatalogEntry:
         raw_scenes = spec.list_scenes() or []

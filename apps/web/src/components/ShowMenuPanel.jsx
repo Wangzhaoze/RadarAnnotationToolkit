@@ -39,7 +39,7 @@ function LayerToggleRow({
   );
 }
 
-export default function VisualizeMenuPanel({
+export default function ShowMenuPanel({
   hasWorkspace,
   sequence,
   classNames,
@@ -60,18 +60,18 @@ export default function VisualizeMenuPanel({
   const classOptions = classNames?.length ? classNames : sequence?.class_names?.length ? sequence.class_names : [];
   const activeLayerCount = ["lidar", "camera", "radar"].filter((sensor) => layerModes?.[sensor] === "semantic").length;
   const layerSummary = activeLayerCount ? `${activeLayerCount} semantic layer${activeLayerCount === 1 ? "" : "s"}` : "Intensity layers";
-  const displaySummary = `Score >= ${scoreThreshold.toFixed(2)}`;
-  const filterSummary = classOptions.length
-    ? `${classOptions.length - hiddenClassNames.length}/${classOptions.length} visible`
+  const scoreSummary = `Score >= ${scoreThreshold.toFixed(2)}`;
+  const classSummary = classOptions.length
+    ? `${classOptions.length - hiddenClassNames.length}/${classOptions.length} classes`
     : "No classes";
 
   return (
     <>
       <SidebarSection
-        id="visualize-layers"
+        id="show-layers"
         title="Layers"
         summary={layerSummary}
-        expanded={expandedSectionId === "visualize-layers"}
+        expanded={expandedSectionId === "show-layers"}
         onToggle={onToggleSection}
       >
         <div className="layer-toggle-list">
@@ -121,26 +121,18 @@ export default function VisualizeMenuPanel({
       </SidebarSection>
 
       <SidebarSection
-        id="visualize-display"
-        title="Score Filter"
-        summary={displaySummary}
-        expanded={expandedSectionId === "visualize-display"}
+        id="show-filters"
+        title="Filters"
+        summary={`${scoreSummary} - ${classSummary}`}
+        expanded={expandedSectionId === "show-filters"}
         onToggle={onToggleSection}
       >
         <NumberField label="Score >=" value={scoreThreshold} step={0.01} onChange={onScoreThresholdChange} disabled={!hasWorkspace} />
         <p className="panel-hint">Low-score auto-label boxes are hidden from the list and 3D view. Manual boxes stay visible.</p>
-        {!hasWorkspace ? <p className="panel-hint">Open File, choose a dataset scene, and load it before visualizing frames.</p> : null}
-        <p className="panel-hint">Point-cloud navigation stays in the shared 3D perspective workspace.</p>
-      </SidebarSection>
+        {!hasWorkspace ? <p className="panel-hint">Open File, choose a dataset scene, and load it before showing frames.</p> : null}
 
-      <SidebarSection
-        id="visualize-filters"
-        title="Class Filters"
-        summary={filterSummary}
-        expanded={expandedSectionId === "visualize-filters"}
-        onToggle={onToggleSection}
-      >
-        <div className="section-head">
+        <div className="section-head filter-section-head">
+          <strong>Classes</strong>
           <button onClick={onShowAllClasses} disabled={!classOptions.length || !hiddenClassNames.length}>
             Show All
           </button>
@@ -171,7 +163,7 @@ export default function VisualizeMenuPanel({
             <span className="panel-hint">No class metadata is available yet.</span>
           )}
         </div>
-        <p className="panel-hint">Use these toggles to hide selected bounding-box classes while staying in Visualize mode.</p>
+        <p className="panel-hint">Use filters to inspect annotations without changing saved labels.</p>
       </SidebarSection>
     </>
   );

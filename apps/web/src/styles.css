@@ -378,6 +378,21 @@ select {
   gap: 0.45rem;
 }
 
+.section-action-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.9rem;
+}
+
+.section-action-row button {
+  min-width: 96px;
+}
+
+.filter-section-head,
+.manual-labeling-actions {
+  margin-top: 0.9rem;
+}
+
 .class-color-swatch {
   width: 0.72rem;
   height: 0.72rem;

@@ -1,110 +1,132 @@
 # Radar Annotation Toolkit
 
-![Current UI](docs/images/current_status.png)
+![Radar Annotation Toolkit UI](docs/images/current_status.png)
 
-面向多传感器数据的 3D 标注工具原型。当前主链路是：
+**Author:** Zhaoze Wang
 
-- Web 前端浏览和编辑 3D 框
-- API 统一调度数据集、标注和任务
-- OpenPCDet worker 提供 3D 检测
-- API 本地执行 tracking
+Radar Annotation Toolkit is a web-based annotation and automation workspace for multi-sensor perception data. It currently focuses on LiDAR-centric 3D bounding box annotation, model-assisted 3D object detection, and worker-side tracking.
 
-## 当前结构
+## Build And Launch
 
-```text
-apps/web                      React 前端
-services/api                  FastAPI 后端
-services/workers/base         Worker Base（当前承载 OpenPCDet）
-storage                       正式标注结果与运行状态
-docs/images                   README 图片资源
-```
+### Requirements
 
-## 数据集接入方式
+- Docker and Docker Compose
+- NVIDIA GPU with Docker GPU runtime
+- Prepared dataset folders mounted from the host machine
+- Optional HTTP/HTTPS proxy environment variables if Docker builds need network access
 
-项目已经移除了 `config/datasets/*.yaml` 这条 preset 流。
+### Dataset Mounts
 
-现在数据集定义全部走代码内置发现：
+The compose file reads dataset roots from environment variables and mounts them into the API and worker containers. 
 
-- 每个数据集对应一个 Python 模块
-- 模块放在 `services/api/app/adapters/`
-- 模块需要提供：
-  - `DATASET_DEFINITION`
-  - `list_dataset_scenes()`
-  - `build_dataset_config(scene_id)`
-  - 对应的 `DatasetAdapter` 实现
-
-当前内置数据集：
-
-- `radelft`
-- `coloradarplus`
-
-以后接入新数据集时，只需要新增一个 adapter Python 文件，不需要再写 YAML。
-
-## 快速启动
-
-### 1. 环境要求
-
-- Docker / Docker Compose
-- NVIDIA GPU 与 Docker GPU Runtime
-- 已准备好多模态数据集
-
-### 2. 配置数据挂载
-
-当前 `docker-compose.yml` 通过环境变量 `RADELFT_DATASET_ROOT` 挂载 RaDelft 数据集。
-
-示例：
+Proxy variables can also be passed from the host environment during image builds:
 
 ```dotenv
-RADELFT_DATASET_ROOT=D:/Datasets/RaDelft
+HTTP_PROXY=http://127.0.0.1:7890
+HTTPS_PROXY=http://127.0.0.1:7890
+NO_PROXY=localhost,127.0.0.1,api,web,worker-base
 ```
 
-可在仓库根目录创建 `.env`：
-
-```dotenv
-RADELFT_DATASET_ROOT=D:/Datasets/RaDelft
-```
-
-### 3. 启动服务
+### Build Images
 
 ```bash
-docker compose up --build
+docker compose build
 ```
 
-启动后访问：
+To rebuild only one service:
 
-- Web UI: [http://localhost:3300](http://localhost:3300)
-- API: [http://localhost:8000](http://localhost:8000)
-- Worker Base: [http://localhost:8010](http://localhost:8010)
+```bash
+docker compose build api
+docker compose build web
+docker compose build worker-base
+```
 
-## 默认运行方式
+### Start Services
 
-当前默认 compose 会：
+```bash
+docker compose up -d
+```
 
-- 自动加载内置 `radelft / Scene6`
-- 启动前端、API、OpenPCDet worker
-- 从 worker 目录读取模型代码和权重
+Open the toolkit:
 
-当前 worker 使用的主要目录：
+- Web UI: http://localhost:3300
+- API: http://localhost:8000
+- Worker Base: http://localhost:8010
 
-- 源码目录：`services/workers/base/openpcdet`
-- 权重目录：`services/workers/base/openpcdet/assets`
+Useful development commands:
 
-## 已实现能力
+```bash
+docker compose ps
+docker compose logs --tail=120 api
+docker compose logs --tail=120 worker-base
+docker compose restart api
+docker compose restart worker-base
+```
 
-- 多传感器联合浏览
-- LiDAR 3D 可视化
-- 3D 框新建、删除、编辑
-- OpenPCDet 自动标注任务
-- API 侧 tracking
-- 标注保存与重新加载
+## System Components
 
-## 当前阶段
+### Web
 
-这个仓库当前更偏“可持续迭代的工程原型”，而不是完全产品化的平台。
+The Web service is the browser-facing annotation interface under `apps/web`.
 
-接下来更适合继续推进的方向：
+It is responsible for:
 
-1. 统一 worker 运行环境
-2. 扩展更多检测模型
-3. 继续收敛前后端遗留代码
-4. 完善 annotation / tracking 工作流
+- Dataset and scene selection
+- LiDAR point cloud visualization
+- Camera and radar preview panels
+- Manual 3D bounding box editing
+- Auto-label task controls
+- Tracking task controls
+- Annotation filtering, layer switching, and interactive review
+
+The Web service talks only to the API. It does not access datasets, model weights, or worker internals directly.
+
+### API
+
+The API service is the orchestration backend under `services/api`.
+
+It is responsible for:
+
+- Dataset adapters and scene timelines
+- Frame asset endpoints for LiDAR, camera, radar, and semantic layers
+- Annotation storage and reload
+- Job lifecycle management
+- Progress updates and WebSocket status messages
+- Dispatching model and tracking work to `worker-base`
+
+Dataset definitions are code-based. New datasets are added as plugins under `services/datasets/<dataset_id>`; YAML dataset presets are no longer used.
+
+### Worker Base
+
+The Worker Base service is the shared algorithm runtime under `services/workers/base`.
+
+It is responsible for:
+
+- OpenPCDet 3D object detection
+- YOLO image inference foundations
+- Worker-side tracking algorithms
+- GPU-dependent model execution
+- Algorithm provider registration behind one worker container
+
+Current provider layout:
+
+```text
+services/workers/base/worker_base   Shared worker HTTP entrypoint
+services/workers/base/openpcdet     OpenPCDet provider and model profiles
+services/workers/base/yolo          YOLO provider foundation
+services/workers/base/tracking      Tracking provider
+services/datasets                   Dataset loaders and dataset-specific model configs
+```
+
+The API sends requests to `worker-base` through `WORKER_URL`. The worker returns serialized model or tracking results, and the API decides how to write them back into the active annotation set.
+
+## TODO
+
+- Implement and improve tracking workflows.
+- Export annotations to fixed, documented formats.
+- Refactor OpenPCDet weight and config profile options.
+- Deploy camera tasks based on YOLO.
+- Add camera semantic segmentation.
+- Add camera object detection.
+- Add camera object tracking.
+- Add camera depth estimation.

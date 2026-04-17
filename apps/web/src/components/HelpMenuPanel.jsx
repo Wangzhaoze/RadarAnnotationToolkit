@@ -12,9 +12,11 @@ export default function HelpMenuPanel({ logCount, expandedSectionId, onToggleSec
       >
         <ul className="plain-list">
           <li>`File` is now the first stop for choosing a supported dataset and scene.</li>
-          <li>`Visualize` is the inspection mode for thresholding, class filtering, and camera/radar checks.</li>
-          <li>`Annotate` exposes auto-label, tracking, transform tools, and the selected 3D box parameters.</li>
-          <li>Leaving `Annotate` automatically saves progress and requests a pause for any running auto-label job.</li>
+          <li>`Show` is the inspection mode for sensor layers, score filters, and class filters.</li>
+          <li>`Auto Labeling` runs model-driven tasks such as 3D object detection and tracking.</li>
+          <li>`Manual Labeling` keeps hand-authored 3D box creation, transforms, and box parameter editing.</li>
+          <li>`Export` is reserved for batch annotation export and fixed-format output.</li>
+          <li>Leaving labeling menus automatically saves progress; leaving `Auto Labeling` also requests a pause for running 3D detection jobs.</li>
           <li>The bottom terminal collects API errors, job progress, and system messages.</li>
         </ul>
       </SidebarSection>

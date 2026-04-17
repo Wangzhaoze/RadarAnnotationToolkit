@@ -1,7 +1,9 @@
 const MENUS = [
   { id: "file", label: "File" },
-  { id: "visualize", label: "Visualize" },
-  { id: "annotate", label: "Annotate" },
+  { id: "show", label: "Show" },
+  { id: "auto-labeling", label: "Auto Labeling" },
+  { id: "manual-labeling", label: "Manual Labeling" },
+  { id: "export", label: "Export" },
   { id: "help", label: "Help" }
 ];
 

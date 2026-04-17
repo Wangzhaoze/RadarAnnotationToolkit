@@ -38,15 +38,6 @@ export default function FileMenuPanel({
         expanded={expandedSectionId === "file-dataset"}
         onToggle={onToggleSection}
       >
-        <div className="section-head">
-          <button
-            className="primary-button"
-            onClick={onLoadSelectedDataset}
-            disabled={isDatasetLoading || !selectedDatasetId || !selectedSceneId || !currentScene?.available}
-          >
-            {isDatasetLoading ? "Loading..." : "Load"}
-          </button>
-        </div>
         <label className="field-stack">
           <span>Dataset</span>
           <select
@@ -93,6 +84,15 @@ export default function FileMenuPanel({
         {!hasWorkspace ? (
           <p className="panel-hint">Choose a supported dataset and scene here, then click Load to start the workspace.</p>
         ) : null}
+        <div className="section-action-row">
+          <button
+            className="primary-button"
+            onClick={onLoadSelectedDataset}
+            disabled={isDatasetLoading || !selectedDatasetId || !selectedSceneId || !currentScene?.available}
+          >
+            {isDatasetLoading ? "Loading..." : "Load"}
+          </button>
+        </div>
       </SidebarSection>
 
       <SidebarSection

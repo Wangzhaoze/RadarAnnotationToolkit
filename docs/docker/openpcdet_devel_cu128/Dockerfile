@@ -16,10 +16,11 @@ ENV OPENPCDET_SOURCE_ROOT=/workspace/services/workers/base/openpcdet
 ENV OPENPCDET_ASSETS_ROOT=/workspace/services/workers/base/openpcdet/assets
 ENV YOLO_SOURCE_ROOT=/workspace/services/workers/base/yolo
 ENV YOLO_ASSETS_ROOT=/workspace/services/workers/base/yolo/assets
+ENV DATASET_PLUGIN_ROOT=/workspace/services/datasets
 ENV VIRTUAL_ENV=/opt/venv
 ENV XDG_RUNTIME_DIR=/tmp/runtime-root
 ENV PATH=/opt/venv/bin:$PATH
-ENV PYTHONPATH=/workspace/services/workers/base:/workspace/services/workers/base/openpcdet
+ENV PYTHONPATH=/workspace/services:/workspace/services/workers/base:/workspace/services/workers/base/openpcdet
 
 WORKDIR /workspace/services/workers/base/openpcdet
 
@@ -42,6 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN mkdir -p /tmp/runtime-root /workspace/services/workers/base/openpcdet/assets
 COPY services/workers/base /workspace/services/workers/base
+COPY services/datasets /workspace/services/datasets
 
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/python -m ensurepip --upgrade \
