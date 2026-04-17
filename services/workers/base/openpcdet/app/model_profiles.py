@@ -8,8 +8,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
+from types import ModuleType
 
 
 OPENPCDET_SOURCE_ROOT = Path(os.getenv("OPENPCDET_SOURCE_ROOT", "/workspace/services/workers/base/openpcdet"))
@@ -31,6 +33,8 @@ NUSCENES_CLASS_NAMES = [
 
 KITTI_CFG_ROOT = OPENPCDET_SOURCE_ROOT / "tools" / "cfgs" / "kitti_models"
 NUSCENES_CFG_ROOT = OPENPCDET_SOURCE_ROOT / "tools" / "cfgs" / "nuscenes_models"
+DEFAULT_DATASET_PLUGIN_ROOT = OPENPCDET_SOURCE_ROOT.parents[2] / "datasets"
+DATASET_PLUGIN_ROOT = Path(os.getenv("DATASET_PLUGIN_ROOT", str(DEFAULT_DATASET_PLUGIN_ROOT)))
 
 
 MODEL_PROFILES = {
@@ -58,32 +62,6 @@ MODEL_PROFILES = {
         "ckpt_path": str(OPENPCDET_ASSETS_ROOT / "pointpillar_kitti.pth"),
         "class_names": KITTI_CLASS_NAMES,
         "preprocess_point_cloud_range": [-50.0, -50.0, -5.0, 100.0, 50.0, 3.0],
-        "default_score_threshold": 0.1,
-    },
-    "pointpillar_rorad_mid360": {
-        "id": "pointpillar_rorad_mid360",
-        "name": "OpenPCDet PointPillar (RoRad Mid360 Experimental)",
-        "architecture": "PointPillar",
-        "framework": "OpenPCDet",
-        "weight_name": "pointpillar_kitti.pth",
-        "description": "Experimental RoRad/Mid360 inference profile using the KITTI PointPillar checkpoint.",
-        "cfg_file": str(KITTI_CFG_ROOT / "pointpillar_rorad_mid360.yaml"),
-        "ckpt_path": str(OPENPCDET_ASSETS_ROOT / "pointpillar_kitti.pth"),
-        "class_names": KITTI_CLASS_NAMES,
-        "preprocess_point_cloud_range": [-5.0, -35.0, -3.0, 61.56, 41.8, 2.0],
-        "default_score_threshold": 0.1,
-    },
-    "pointpillar_hella_aeva_anf": {
-        "id": "pointpillar_hella_aeva_anf",
-        "name": "OpenPCDet PointPillar (Hella_Aeva Aeva FMCW Experimental)",
-        "architecture": "PointPillar",
-        "framework": "OpenPCDet",
-        "weight_name": "pointpillar_kitti.pth",
-        "description": "Experimental Hella_Aeva/anf profile using the KITTI PointPillar checkpoint.",
-        "cfg_file": str(KITTI_CFG_ROOT / "pointpillar_hella_aeva_anf.yaml"),
-        "ckpt_path": str(OPENPCDET_ASSETS_ROOT / "pointpillar_kitti.pth"),
-        "class_names": KITTI_CLASS_NAMES,
-        "preprocess_point_cloud_range": [0.0, -40.96, -4.0, 122.88, 40.96, 6.0],
         "default_score_threshold": 0.1,
     },
     "second_kitti": {
@@ -126,6 +104,41 @@ MODEL_PROFILES = {
         "default_score_threshold": 0.1,
     },
 }
+
+
+def _load_profile_module(dataset_id: str, profiles_path: Path) -> ModuleType:
+    module_name = f"radar_annotation_openpcdet_profiles_{dataset_id}"
+    spec = importlib.util.spec_from_file_location(module_name, profiles_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load OpenPCDet profile plugin: {profiles_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _discover_dataset_profiles() -> dict[str, dict]:
+    profiles: dict[str, dict] = {}
+    if not DATASET_PLUGIN_ROOT.exists():
+        return profiles
+    for dataset_dir in sorted(DATASET_PLUGIN_ROOT.iterdir()):
+        profiles_path = dataset_dir / "openpcdet" / "profiles.py"
+        if not profiles_path.exists():
+            continue
+        module = _load_profile_module(dataset_dir.name, profiles_path)
+        build_profiles = getattr(module, "build_openpcdet_profiles", None)
+        if not callable(build_profiles):
+            continue
+        for profile in build_profiles(OPENPCDET_ASSETS_ROOT) or []:
+            profile_id = str(profile.get("id") or "").strip()
+            if not profile_id:
+                continue
+            if profile_id in MODEL_PROFILES or profile_id in profiles:
+                raise ValueError(f"Duplicate OpenPCDet profile id: {profile_id}")
+            profiles[profile_id] = profile
+    return profiles
+
+
+MODEL_PROFILES.update(_discover_dataset_profiles())
 
 
 DEFAULT_MODEL_PROFILE_ID = os.getenv("DEFAULT_MODEL_PROFILE_ID", "pv_rcnn_kitti")
