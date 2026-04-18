@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import time
@@ -18,12 +19,35 @@ from uuid import uuid4
 
 import httpx
 from fastapi import WebSocket
+from PIL import Image, ImageDraw
 
-from app.models import AutoLabelModelCatalog, AutoLabelRequest, Box3D, JobStatus, TrackingReadinessResponse, TrackingRequest
+from app.adapters.base import sensor_match_get
+from app.models import AutoLabelModelCatalog, AutoLabelRequest, BBox2D, Box2DAnnotation, Box3D, JobStatus, TrackingReadinessResponse, TrackingRequest
 from app.services.annotation_store import AnnotationStore
 from app.services.dataset_registry import DatasetRegistry
 
 logger = logging.getLogger("radar-annotation-toolkit.jobs")
+
+YOLO_TASK_2D_DETECTION = "2D Object Detection"
+YOLO_TASK_2D_SEGMENTATION = "2D Semantic Segmentation"
+YOLO_CLASS_NAMES = ["Vehicle", "Pedestrian", "Bicycle", "truck", "bus"]
+YOLO_CLASS_COLORS = {
+    "Vehicle": (245, 150, 100),
+    "Pedestrian": (30, 30, 255),
+    "Bicycle": (245, 230, 100),
+    "truck": (180, 30, 80),
+    "bus": (250, 80, 100),
+}
+YOLO_CLASS_ALIASES = {
+    "car": "Vehicle",
+    "van": "Vehicle",
+    "person": "Pedestrian",
+    "pedestrian": "Pedestrian",
+    "bicycle": "Bicycle",
+    "cyclist": "Bicycle",
+    "truck": "truck",
+    "bus": "bus",
+}
 
 
 @dataclass
@@ -164,7 +188,33 @@ class JobManager:
     async def list_model_profiles(self) -> AutoLabelModelCatalog:
         async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as client:
             response = await self._request_worker(client, "GET", "/models")
-            return AutoLabelModelCatalog.model_validate(response.json())
+            payload = response.json()
+            profiles = list(payload.get("profiles") or [])
+            provider_profiles = payload.get("provider_profiles") or {}
+            for profile in provider_profiles.get("yolo", []):
+                profiles.append(
+                    {
+                        "id": profile.get("id"),
+                        "name": profile.get("name"),
+                        "architecture": "YOLO",
+                        "framework": profile.get("framework") or "Ultralytics",
+                        "weight_name": profile.get("weight_name") or Path(profile.get("ckpt_path", "")).name,
+                        "description": profile.get("description") or "",
+                        "cfg_file": None,
+                        "ckpt_path": profile.get("ckpt_path") or "",
+                        "class_names": profile.get("class_names") or YOLO_CLASS_NAMES,
+                        "default_score_threshold": profile.get("default_score_threshold", 0.1),
+                        "is_available": bool(profile.get("is_available")),
+                        "provider": "yolo",
+                        "task": profile.get("task"),
+                    }
+                )
+            return AutoLabelModelCatalog.model_validate(
+                {
+                    "default_model_profile_id": payload.get("default_model_profile_id"),
+                    "profiles": profiles,
+                }
+            )
 
     async def resume_incomplete_jobs(self) -> None:
         for job_id, job in list(self.jobs.items()):
@@ -339,6 +389,10 @@ class JobManager:
         return job
 
     async def _process_job(self, job_id: str, request: AutoLabelRequest, pending_frames: list[int]) -> None:
+        if request.task_name in {YOLO_TASK_2D_DETECTION, YOLO_TASK_2D_SEGMENTATION}:
+            await self._process_yolo_job(job_id, request, pending_frames)
+            return
+
         job = self.jobs[job_id]
         control = self.controls[job_id]
         if await self._finish_if_cancelled(job, control):
@@ -434,6 +488,99 @@ class JobManager:
         job.pause_requested = False
         job.cancel_requested = False
         job.message = "Auto-labeling completed"
+        await self._broadcast(job)
+
+    async def _process_yolo_job(self, job_id: str, request: AutoLabelRequest, pending_frames: list[int]) -> None:
+        job = self.jobs[job_id]
+        control = self.controls[job_id]
+        if await self._finish_if_cancelled(job, control):
+            return
+        job.status = "running"
+        job.message = f"Preparing {request.task_name}"
+        job.current_frame = pending_frames[0] if pending_frames else None
+        await self._broadcast(job)
+
+        sequence = self.dataset_registry.get(request.sequence_id)
+        score_threshold = request.score_threshold
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+            try:
+                for frame_index in pending_frames:
+                    if await self._wait_if_paused(job, control):
+                        return
+                    if await self._finish_if_cancelled(job, control):
+                        return
+                    frame_summary = sequence.adapter.get_frame_summary(frame_index)
+                    image_path = self._resolve_camera_image_path(frame_summary)
+                    job.status = "running"
+                    job.current_frame = frame_index
+                    job.message = f"Running {request.task_name} for frame {frame_index} ({job.processed_frames + 1}/{job.total_frames})"
+                    await self._broadcast(job)
+                    response = await self._request_worker(
+                        client,
+                        "POST",
+                        "/infer/yolo",
+                        job=job,
+                        json={
+                            "model_id": request.model_profile_id,
+                            "items": [
+                                {
+                                    "frame_index": frame_index,
+                                    "image_path": image_path,
+                                }
+                            ],
+                        },
+                    )
+                    result = response.json()["results"][0]
+                    annotations_2d = self._normalize_yolo_annotations(
+                        result.get("annotations", []),
+                        score_threshold=score_threshold,
+                    )
+                    if request.task_name == YOLO_TASK_2D_DETECTION:
+                        self.annotation_store.replace_annotations_2d(
+                            request.sequence_id,
+                            frame_index,
+                            annotations_2d,
+                            detection_completed=True,
+                        )
+                    else:
+                        semantic_png = self._render_yolo_semantic_mask(image_path, annotations_2d)
+                        self.annotation_store.write_camera_semantic_mask(
+                            request.sequence_id,
+                            frame_index,
+                            "rgb",
+                            semantic_png,
+                        )
+                    job.processed_frames += 1
+                    job.progress = round(job.processed_frames / job.total_frames, 4)
+                    job.message = f"Processed frame {frame_index} ({job.processed_frames}/{job.total_frames})"
+                    await self._broadcast(job)
+                    if await self._finish_if_cancelled(job, control):
+                        return
+            except asyncio.CancelledError:
+                if job.status != "cancelled":
+                    job.status = "cancelled"
+                    job.message = "Auto-labeling stopped"
+                    job.current_frame = None
+                    job.pause_requested = False
+                    job.cancel_requested = False
+                    await self._broadcast(job)
+                return
+            except Exception as exc:
+                job.status = "failed"
+                job.error = self._format_error(exc)
+                job.current_frame = None
+                job.message = f"{request.task_name} failed"
+                await self._broadcast(job)
+                return
+            finally:
+                self.tasks.pop(job_id, None)
+
+        job.status = "completed"
+        job.progress = 1.0
+        job.current_frame = None
+        job.pause_requested = False
+        job.cancel_requested = False
+        job.message = f"{request.task_name} completed"
         await self._broadcast(job)
 
     async def _process_tracking_job(self, job_id: str, request: TrackingRequest) -> None:
@@ -860,11 +1007,18 @@ class JobManager:
         pending_frames: list[int] = []
         skipped_frames = 0
         for frame_index in range(request.start_frame, request.end_frame + 1):
-            if self.annotation_store.has_detection_record(request.sequence_id, frame_index):
+            if self._has_auto_label_record(request, frame_index):
                 skipped_frames += 1
                 continue
             pending_frames.append(frame_index)
         return pending_frames, skipped_frames
+
+    def _has_auto_label_record(self, request: AutoLabelRequest, frame_index: int) -> bool:
+        if request.task_name == YOLO_TASK_2D_DETECTION:
+            return self.annotation_store.has_2d_detection_record(request.sequence_id, frame_index)
+        if request.task_name == YOLO_TASK_2D_SEGMENTATION:
+            return self.annotation_store.has_2d_segmentation_record(request.sequence_id, frame_index)
+        return self.annotation_store.has_detection_record(request.sequence_id, frame_index)
 
     def _validate_sequence_frame_range(self, sequence_id: str, start_frame: int, end_frame: int) -> None:
         if start_frame < 0 or end_frame < start_frame:
@@ -880,3 +1034,71 @@ class JobManager:
         if skipped_frames == total_frames:
             return f"All {total_frames} frames already have detection annotations"
         return "Queued"
+
+    def _resolve_camera_image_path(self, frame_summary: dict) -> str:
+        camera_matches = frame_summary.get("camera") or {}
+        ordered_names = ["rgb", *[name for name in camera_matches if name != "rgb"]]
+        for name in ordered_names:
+            match = camera_matches.get(name)
+            path = sensor_match_get(match, "path") if match is not None else None
+            if sensor_match_get(match, "available") and path:
+                return str(path)
+        raise ValueError("Camera frame not available for YOLO auto-labeling")
+
+    def _normalize_yolo_class(self, class_name: str) -> str | None:
+        return YOLO_CLASS_ALIASES.get(str(class_name or "").strip().lower())
+
+    def _normalize_yolo_annotations(
+        self,
+        raw_annotations: list[dict],
+        *,
+        score_threshold: float | None,
+    ) -> list[Box2DAnnotation]:
+        annotations: list[Box2DAnnotation] = []
+        for index, raw in enumerate(raw_annotations):
+            class_name = self._normalize_yolo_class(raw.get("class_name", ""))
+            if class_name is None:
+                continue
+            score = float(raw.get("score") or 0.0)
+            if score_threshold is not None and score < score_threshold:
+                continue
+            bbox = raw.get("bbox_2d") or {}
+            annotations.append(
+                Box2DAnnotation(
+                    id=f"yolo2d-{index}-{uuid4().hex[:8]}",
+                    class_name=class_name,
+                    score=score,
+                    bbox_2d=BBox2D(
+                        x1=float(bbox.get("x1", 0.0)),
+                        y1=float(bbox.get("y1", 0.0)),
+                        x2=float(bbox.get("x2", 0.0)),
+                        y2=float(bbox.get("y2", 0.0)),
+                    ),
+                    mask_polygons=raw.get("mask_polygons") or [],
+                    source_model=raw.get("source_model") or "YOLO",
+                    source_stage="detected",
+                )
+            )
+        return annotations
+
+    def _render_yolo_semantic_mask(self, image_path: str, annotations: list[Box2DAnnotation]) -> bytes:
+        with Image.open(image_path) as source_image:
+            width, height = source_image.size
+        semantic = Image.new("RGB", (width, height), (0, 0, 0))
+        draw = ImageDraw.Draw(semantic)
+        for annotation in sorted(annotations, key=lambda item: item.score):
+            color = YOLO_CLASS_COLORS.get(annotation.class_name)
+            if color is None:
+                continue
+            polygons = annotation.mask_polygons or []
+            if polygons:
+                for polygon in polygons:
+                    points = [(float(point[0]), float(point[1])) for point in polygon if len(point) >= 2]
+                    if len(points) >= 3:
+                        draw.polygon(points, fill=color)
+                continue
+            bbox = annotation.bbox_2d
+            draw.rectangle([bbox.x1, bbox.y1, bbox.x2, bbox.y2], fill=color)
+        buffer = io.BytesIO()
+        semantic.save(buffer, format="PNG")
+        return buffer.getvalue()

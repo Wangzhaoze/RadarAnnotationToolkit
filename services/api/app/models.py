@@ -52,6 +52,33 @@ class Box3D(BaseModel):
         return payload
 
 
+class BBox2D(BaseModel):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+class Box2DAnnotation(BaseModel):
+    id: str
+    class_name: str
+    score: float = 0.0
+    bbox_2d: BBox2D
+    mask_polygons: list[list[list[float]]] = Field(default_factory=list)
+    source_model: str = "manual"
+    source_stage: Literal["manual", "detected"] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_source_stage(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        if payload.get("source_stage") is None:
+            payload["source_stage"] = "manual" if payload.get("source_model") == "manual" else "detected"
+        return payload
+
+
 class DatasetConfig(BaseModel):
     adapter: str
     dataset_root: str
@@ -132,6 +159,7 @@ class FrameDetail(BaseModel):
     frame_index: int
     timestamp: float
     annotations: list[Box3D]
+    annotations_2d: list[Box2DAnnotation] = Field(default_factory=list)
     asset_urls: FrameAssetUrls
     semantic_available: SemanticAvailability = Field(default_factory=SemanticAvailability)
     layer_availability: FrameLayerAvailability = Field(default_factory=FrameLayerAvailability)
@@ -189,15 +217,17 @@ class AutoLabelModelProfile(BaseModel):
 
     id: str
     name: str
-    architecture: str
+    architecture: str | None = None
     framework: str
     weight_name: str
     description: str
-    cfg_file: str
+    cfg_file: str | None = None
     ckpt_path: str
-    class_names: list[str]
-    default_score_threshold: float
+    class_names: list[str] = Field(default_factory=list)
+    default_score_threshold: float = 0.1
     is_available: bool
+    provider: str = "openpcdet"
+    task: str | None = None
 
 
 class AutoLabelModelCatalog(BaseModel):

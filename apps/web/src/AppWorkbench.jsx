@@ -31,6 +31,11 @@ const DEFAULT_LAYER_MODES = {
   camera: "intensity",
   radar: "intensity"
 };
+const DEFAULT_BBX_VISIBILITY = {
+  box3d: true,
+  box2d: false
+};
+const DEFAULT_FILTER_TARGET = "box3d";
 
 const FALLBACK_MODEL_PROFILES = [
   {
@@ -335,8 +340,12 @@ export default function AppWorkbench() {
   const [trackingMatchZDelta, setTrackingMatchZDelta] = useState(null);
   const [modelProfiles, setModelProfiles] = useState(FALLBACK_MODEL_PROFILES);
   const [selectedModelProfileId, setSelectedModelProfileId] = useState(FALLBACK_MODEL_PROFILES[0].id);
+  const [selected2dDetectionModelProfileId, setSelected2dDetectionModelProfileId] = useState("");
+  const [selected2dSegmentationModelProfileId, setSelected2dSegmentationModelProfileId] = useState("");
   const [scoreThreshold, setScoreThreshold] = useState(FALLBACK_MODEL_PROFILES[0].default_score_threshold);
   const [hiddenClassNames, setHiddenClassNames] = useState([]);
+  const [bbxVisibility, setBbxVisibility] = useState(DEFAULT_BBX_VISIBILITY);
+  const [filterTarget, setFilterTarget] = useState(DEFAULT_FILTER_TARGET);
   const [statusMessage, setStatusMessage] = useState("Choose a dataset and scene in File, then click Load.");
   const [isFrameLoading, setIsFrameLoading] = useState(false);
   const [isDatasetLoading, setIsDatasetLoading] = useState(false);
@@ -392,18 +401,59 @@ export default function AppWorkbench() {
     [currentAnnotations]
   );
   const visibleAnnotations = useMemo(
-    () =>
-      visualizableAnnotations.filter(
+    () => {
+      if (filterTarget !== "box3d") {
+        return visualizableAnnotations;
+      }
+      return visualizableAnnotations.filter(
         (annotation) =>
           isAnnotationVisible(annotation, scoreThreshold) && !hiddenClassNames.includes(annotation.class_name)
-      ),
-    [visualizableAnnotations, scoreThreshold, hiddenClassNames]
+      );
+    },
+    [filterTarget, visualizableAnnotations, scoreThreshold, hiddenClassNames]
   );
-  const hiddenAnnotationCount = currentAnnotations.length - visibleAnnotations.length;
+  const visible2dAnnotations = useMemo(
+    () => {
+      const annotations2d = frameDetail?.annotations_2d || [];
+      if (filterTarget !== "box2d") {
+        return annotations2d;
+      }
+      return annotations2d.filter(
+        (annotation) =>
+          isAnnotationVisible(annotation, scoreThreshold) && !hiddenClassNames.includes(annotation.class_name)
+      );
+    },
+    [filterTarget, frameDetail?.annotations_2d, hiddenClassNames, scoreThreshold]
+  );
+  const hiddenAnnotationCount = filterTarget === "box3d" ? currentAnnotations.length - visibleAnnotations.length : 0;
+  const drawnAnnotations = useMemo(
+    () => (bbxVisibility.box3d ? visibleAnnotations : []),
+    [bbxVisibility.box3d, visibleAnnotations]
+  );
+  const drawn2dAnnotations = useMemo(
+    () => (bbxVisibility.box2d ? visible2dAnnotations : []),
+    [bbxVisibility.box2d, visible2dAnnotations]
+  );
   const selectedAnnotation =
     visibleAnnotations.find((annotation) => annotation.id === selectedAnnotationId) || null;
+  const openpcdetModelProfiles = useMemo(
+    () => modelProfiles.filter((profile) => profile.provider !== "yolo"),
+    [modelProfiles]
+  );
+  const yolo2dDetectionModelProfiles = useMemo(
+    () => modelProfiles.filter((profile) => profile.provider === "yolo" && profile.task === "2d_object_detection"),
+    [modelProfiles]
+  );
+  const yolo2dSegmentationModelProfiles = useMemo(
+    () => modelProfiles.filter((profile) => profile.provider === "yolo" && profile.task === "2d_semantic_segmentation"),
+    [modelProfiles]
+  );
   const selectedModelProfile =
-    modelProfiles.find((profile) => profile.id === selectedModelProfileId) || modelProfiles[0] || null;
+    openpcdetModelProfiles.find((profile) => profile.id === selectedModelProfileId) || openpcdetModelProfiles[0] || null;
+  const selected2dDetectionModelProfile =
+    yolo2dDetectionModelProfiles.find((profile) => profile.id === selected2dDetectionModelProfileId) || yolo2dDetectionModelProfiles[0] || null;
+  const selected2dSegmentationModelProfile =
+    yolo2dSegmentationModelProfiles.find((profile) => profile.id === selected2dSegmentationModelProfileId) || yolo2dSegmentationModelProfiles[0] || null;
   const visualizationClassNames = FIXED_VISUALIZATION_CLASS_NAMES;
   const layerCapabilities = useMemo(() => {
     const layerAvailability = frameDetail?.layer_availability || {};
@@ -459,6 +509,13 @@ export default function AppWorkbench() {
   const hasRunningJob = jobStatus ? ACTIVE_JOB_STATUSES.includes(jobStatus.status) : false;
   const hasActiveJob = hasRunningJob || Boolean(jobLaunchState);
   const capabilityReport = useMemo(() => buildCapabilityReport(timeline, frameDetail), [timeline, frameDetail]);
+  const bbxAvailability = useMemo(
+    () => ({
+      box3d: Boolean(currentSequenceId && (capabilityReport?.can_annotate_3d_box ?? true)),
+      box2d: Boolean(frameDetail?.annotations_2d?.length)
+    }),
+    [capabilityReport, currentSequenceId, frameDetail?.annotations_2d]
+  );
   const sidebarScale = useMemo(() => getSidebarScale(sidebarWidth), [sidebarWidth]);
   const appShellStyle = useMemo(
     () => ({
@@ -687,6 +744,16 @@ export default function AppWorkbench() {
     );
   }
 
+  function toggleBbxVisibility(kind) {
+    if (!bbxAvailability[kind]) {
+      return;
+    }
+    setBbxVisibility((current) => ({
+      ...current,
+      [kind]: !current[kind]
+    }));
+  }
+
   function handleDatasetSelection(nextDatasetId) {
     setSelectedDatasetId(nextDatasetId);
     const nextDataset = datasetCatalog.find((dataset) => dataset.id === nextDatasetId) || null;
@@ -826,14 +893,29 @@ export default function AppWorkbench() {
           return;
         }
         setModelProfiles(nextProfiles);
+        const nextOpenpcdetProfiles = nextProfiles.filter((profile) => profile.provider !== "yolo");
+        const nextYolo2dDetectionProfiles = nextProfiles.filter((profile) => profile.provider === "yolo" && profile.task === "2d_object_detection");
+        const nextYolo2dSegmentationProfiles = nextProfiles.filter((profile) => profile.provider === "yolo" && profile.task === "2d_semantic_segmentation");
         setSelectedModelProfileId((current) => {
-          if (nextProfiles.some((profile) => profile.id === current)) {
+          if (nextOpenpcdetProfiles.some((profile) => profile.id === current)) {
             return current;
           }
-          if (payload.default_model_profile_id && nextProfiles.some((profile) => profile.id === payload.default_model_profile_id)) {
+          if (payload.default_model_profile_id && nextOpenpcdetProfiles.some((profile) => profile.id === payload.default_model_profile_id)) {
             return payload.default_model_profile_id;
           }
-          return nextProfiles[0].id;
+          return nextOpenpcdetProfiles[0]?.id || "";
+        });
+        setSelected2dDetectionModelProfileId((current) => {
+          if (nextYolo2dDetectionProfiles.some((profile) => profile.id === current)) {
+            return current;
+          }
+          return nextYolo2dDetectionProfiles[0]?.id || "";
+        });
+        setSelected2dSegmentationModelProfileId((current) => {
+          if (nextYolo2dSegmentationProfiles.some((profile) => profile.id === current)) {
+            return current;
+          }
+          return nextYolo2dSegmentationProfiles[0]?.id || "";
         });
         logMessage("success", `Loaded ${nextProfiles.length} auto-label model${nextProfiles.length === 1 ? "" : "s"}.`);
       })
@@ -1214,19 +1296,19 @@ export default function AppWorkbench() {
     }
   }, [jobStatus, currentSequenceId, frameIndex]);
 
-  async function runAutoLabel() {
-    if (!currentSequenceId || !selectedModelProfile || !isAutoLabelingMode || hasActiveJob || jobLaunchLockRef.current) {
+  async function runAutoLabelTask({ profile, taskName, launchType, label }) {
+    if (!currentSequenceId || !profile || !isAutoLabelingMode || hasActiveJob || jobLaunchLockRef.current) {
       return;
     }
     jobLaunchLockRef.current = true;
     setJobLaunchState(
       createJobLaunchState(
-        "auto-label",
-        `Preparing ${selectedModelProfile.name} auto-label job...`,
+        launchType,
+        `Preparing ${label} job...`,
         `Queueing frames ${startFrame}-${endFrame}.`
       )
     );
-    updateStatus(`Preparing ${selectedModelProfile.name} auto-label job...`);
+    updateStatus(`Preparing ${label} job...`);
     try {
       const payload = await request("/jobs/auto-label", {
         method: "POST",
@@ -1234,21 +1316,48 @@ export default function AppWorkbench() {
           sequence_id: currentSequenceId,
           start_frame: startFrame,
           end_frame: endFrame,
-          model_name: selectedModelProfile.name,
-          model_profile_id: selectedModelProfile.id,
+          model_name: profile.name,
+          model_profile_id: profile.id,
           score_threshold: scoreThreshold,
-          task_name: "3D Bounding Box"
+          task_name: taskName
         })
       });
       setJobLaunchState(null);
       setJobStatus(payload);
-      updateStatus(payload.message || "Auto-labeling job started");
+      updateStatus(payload.message || `${label} job started`);
     } catch (error) {
       setJobLaunchState(null);
-      logMessage("error", `Auto-labeling failed to start: ${error.message}`);
+      logMessage("error", `${label} failed to start: ${error.message}`);
     } finally {
       jobLaunchLockRef.current = false;
     }
+  }
+
+  async function runAutoLabel() {
+    return runAutoLabelTask({
+      profile: selectedModelProfile,
+      taskName: "3D Bounding Box",
+      launchType: "auto-label",
+      label: selectedModelProfile?.name || "3D object detection"
+    });
+  }
+
+  async function run2dObjectDetection() {
+    return runAutoLabelTask({
+      profile: selected2dDetectionModelProfile,
+      taskName: "2D Object Detection",
+      launchType: "2d-detection",
+      label: selected2dDetectionModelProfile?.name || "2D object detection"
+    });
+  }
+
+  async function run2dSemanticSegmentation() {
+    return runAutoLabelTask({
+      profile: selected2dSegmentationModelProfile,
+      taskName: "2D Semantic Segmentation",
+      launchType: "2d-segmentation",
+      label: selected2dSegmentationModelProfile?.name || "2D semantic segmentation"
+    });
   }
 
   async function runTracking() {
@@ -1480,13 +1589,28 @@ export default function AppWorkbench() {
             setStartFrame={setStartFrame}
             setEndFrame={setEndFrame}
             isAnnotationMode={isAnnotationMode}
-            modelProfiles={modelProfiles}
+            modelProfiles={openpcdetModelProfiles}
             selectedModelProfile={selectedModelProfile}
             selectedModelProfileId={selectedModelProfileId}
             onSelectModelProfile={setSelectedModelProfileId}
+            yolo2dDetectionModelProfiles={yolo2dDetectionModelProfiles}
+            selected2dDetectionModelProfile={selected2dDetectionModelProfile}
+            selected2dDetectionModelProfileId={selected2dDetectionModelProfileId}
+            onSelect2dDetectionModelProfile={setSelected2dDetectionModelProfileId}
+            yolo2dSegmentationModelProfiles={yolo2dSegmentationModelProfiles}
+            selected2dSegmentationModelProfile={selected2dSegmentationModelProfile}
+            selected2dSegmentationModelProfileId={selected2dSegmentationModelProfileId}
+            onSelect2dSegmentationModelProfile={setSelected2dSegmentationModelProfileId}
             scoreThreshold={scoreThreshold}
             onScoreThresholdChange={(value) => setScoreThreshold(clampScoreThreshold(value))}
+            filterTarget={filterTarget}
+            onFilterTargetChange={setFilterTarget}
+            bbxVisibility={bbxVisibility}
+            bbxAvailability={bbxAvailability}
+            onToggleBbxVisibility={toggleBbxVisibility}
             onRunAutoLabel={runAutoLabel}
+            onRun2dObjectDetection={run2dObjectDetection}
+            onRun2dSemanticSegmentation={run2dSemanticSegmentation}
             onRunTracking={runTracking}
             trackingMethod={trackingMethod}
             onTrackingMethodChange={setTrackingMethod}
@@ -1559,7 +1683,7 @@ export default function AppWorkbench() {
               <div className="viewer-panel">
                 <PointCloudViewer
                   points={points}
-                  annotations={visibleAnnotations}
+                  annotations={drawnAnnotations}
                   classNames={visualizationClassNames}
                   selectedAnnotationId={selectedAnnotationId}
                   onSelectAnnotation={setSelectedAnnotationId}
@@ -1613,7 +1737,8 @@ export default function AppWorkbench() {
               cameraLayerMode={layerModes.camera}
               radarLayerMode={layerModes.radar}
               frameDetail={frameDetail}
-              annotations={visibleAnnotations}
+              annotations={drawnAnnotations}
+              annotations2d={drawn2dAnnotations}
               classNames={visualizationClassNames}
             />
           ) : (

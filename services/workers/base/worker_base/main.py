@@ -19,7 +19,7 @@ from tracking.service import (
     TrackingJobStatusResponse,
     engine as tracking_engine,
 )
-from yolo.infer import YoloInferenceRequest, YoloInferenceResponse, engine as yolo_engine
+from yolo.infer_seg import YoloInferenceRequest, YoloInferenceResponse, engine as yolo_engine
 
 
 logger = logging.getLogger("worker-base")

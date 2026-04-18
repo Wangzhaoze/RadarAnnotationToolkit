@@ -187,7 +187,42 @@ function drawProjectedBoxes(metrics, annotations, classNames, calibration) {
   return projectedAnnotations.length;
 }
 
-function CameraProjectionCanvas({ alt, placeholder, src, annotations, classNames, calibration, onProjectionCount }) {
+function draw2dBoxes(metrics, annotations2d, classNames) {
+  if (!metrics?.context || !annotations2d?.length) {
+    return 0;
+  }
+  annotations2d.forEach((annotation) => {
+    const color = getAnnotationColor(annotation.class_name, classNames);
+    const box = annotation.bbox_2d;
+    if (!box) {
+      return;
+    }
+    const width = Math.max(0, box.x2 - box.x1);
+    const height = Math.max(0, box.y2 - box.y1);
+    if (!width || !height) {
+      return;
+    }
+    metrics.context.save();
+    metrics.context.lineWidth = 2.4;
+    metrics.context.strokeStyle = color;
+    metrics.context.fillStyle = hexToRgba(color, 0.1);
+    metrics.context.fillRect(box.x1, box.y1, width, height);
+    metrics.context.strokeRect(box.x1, box.y1, width, height);
+    metrics.context.font = "600 14px 'Segoe UI', sans-serif";
+    const textWidth = metrics.context.measureText(annotation.class_name).width;
+    const labelX = Math.max(0, Math.min(metrics.sourceWidth - textWidth - 12, box.x1));
+    const labelY = Math.max(18, box.y1 - 8);
+    metrics.context.fillStyle = "rgba(7, 16, 24, 0.82)";
+    metrics.context.fillRect(labelX - 6, labelY - 16, textWidth + 12, 20);
+    metrics.context.strokeRect(labelX - 6, labelY - 16, textWidth + 12, 20);
+    metrics.context.fillStyle = color;
+    metrics.context.fillText(annotation.class_name, labelX, labelY - 2);
+    metrics.context.restore();
+  });
+  return annotations2d.length;
+}
+
+function CameraProjectionCanvas({ alt, placeholder, src, annotations, annotations2d, classNames, calibration, onProjectionCount }) {
   const canvasRef = useRef(null);
   const frameSourceRef = useRef(null);
   const requestIdRef = useRef(0);
@@ -266,8 +301,9 @@ function CameraProjectionCanvas({ alt, placeholder, src, annotations, classNames
     }
     const metrics = drawFrameToCanvas(canvasRef.current, frameSourceRef.current.source);
     const projectedCount = drawProjectedBoxes(metrics, annotations, classNames, calibration);
+    draw2dBoxes(metrics, annotations2d, classNames);
     onProjectionCount?.(projectedCount);
-  }, [annotations, calibration, classNames, frameRevision, onProjectionCount]);
+  }, [annotations, annotations2d, calibration, classNames, frameRevision, onProjectionCount]);
 
   return (
     <div className="media-frame">
@@ -287,6 +323,7 @@ export default function MediaPanel({
   radarLayerMode = "intensity",
   frameDetail,
   annotations = [],
+  annotations2d = [],
   classNames = []
 }) {
   const resolvedCameraUrl = cameraLayerMode === "semantic" && cameraSemanticUrl ? cameraSemanticUrl : cameraUrl;
@@ -308,6 +345,7 @@ export default function MediaPanel({
             placeholder="No camera frame"
             src={cameraSrc}
             annotations={annotations}
+            annotations2d={annotations2d}
             classNames={classNames}
             calibration={frameDetail?.calibration}
           />

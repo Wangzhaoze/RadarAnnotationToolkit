@@ -39,6 +39,34 @@ function LayerToggleRow({
   );
 }
 
+const FILTER_TARGET_OPTIONS = [
+  { id: "box3d", label: "3D BBX" },
+  { id: "box2d", label: "2D BBX" },
+  { id: "segmentation", label: "Segmentation" }
+];
+
+function BbxVisibilityRow({ label, visible, available, reason, onToggle }) {
+  const stateLabel = !available ? "Unavailable" : visible ? "Visible" : "Hidden";
+  return (
+    <div className={`bbx-visibility-row ${visible ? "is-visible" : "is-hidden"} ${!available ? "is-unavailable" : ""}`}>
+      <div>
+        <strong>{label}</strong>
+        <span>{stateLabel}</span>
+      </div>
+      <button
+        type="button"
+        className="bbx-eye-button"
+        onClick={onToggle}
+        disabled={!available}
+        title={!available ? reason : visible ? `Hide ${label}` : `Show ${label}`}
+        aria-label={`${stateLabel}: ${label}`}
+      >
+        <span className="bbx-eye-icon" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 export default function ShowMenuPanel({
   hasWorkspace,
   sequence,
@@ -51,6 +79,11 @@ export default function ShowMenuPanel({
   onLayerModeChange,
   scoreThreshold,
   onScoreThresholdChange,
+  filterTarget,
+  onFilterTargetChange,
+  bbxVisibility,
+  bbxAvailability,
+  onToggleBbxVisibility,
   hiddenClassNames,
   onToggleClassVisibility,
   onShowAllClasses,
@@ -64,6 +97,14 @@ export default function ShowMenuPanel({
   const classSummary = classOptions.length
     ? `${classOptions.length - hiddenClassNames.length}/${classOptions.length} classes`
     : "No classes";
+  const visibleBbxCount = ["box3d", "box2d"].filter((kind) => bbxVisibility?.[kind] && bbxAvailability?.[kind]).length;
+  const bbxSummary = visibleBbxCount ? `${visibleBbxCount} visible` : "Hidden";
+  const filterTargetAvailability = {
+    box3d: Boolean(bbxAvailability?.box3d),
+    box2d: Boolean(bbxAvailability?.box2d),
+    segmentation: false
+  };
+  const activeFilterTarget = FILTER_TARGET_OPTIONS.find((option) => option.id === filterTarget) || FILTER_TARGET_OPTIONS[0];
 
   return (
     <>
@@ -121,14 +162,55 @@ export default function ShowMenuPanel({
       </SidebarSection>
 
       <SidebarSection
+        id="show-bbxs"
+        title="BBXs"
+        summary={bbxSummary}
+        expanded={expandedSectionId === "show-bbxs"}
+        onToggle={onToggleSection}
+      >
+        <div className="bbx-visibility-list">
+          <BbxVisibilityRow
+            label="3D Bounding Box"
+            visible={Boolean(bbxVisibility?.box3d)}
+            available={Boolean(bbxAvailability?.box3d)}
+            reason="Load a LiDAR-capable dataset before drawing 3D boxes"
+            onToggle={() => onToggleBbxVisibility("box3d")}
+          />
+          <BbxVisibilityRow
+            label="2D Bounding Box"
+            visible={Boolean(bbxVisibility?.box2d)}
+            available={Boolean(bbxAvailability?.box2d)}
+            reason="2D object detection annotations are not available yet"
+            onToggle={() => onToggleBbxVisibility("box2d")}
+          />
+        </div>
+        <p className="panel-hint">These switches only control whether bounding boxes are drawn in the viewers. They do not delete or edit annotations.</p>
+      </SidebarSection>
+
+      <SidebarSection
         id="show-filters"
         title="Filters"
-        summary={`${scoreSummary} - ${classSummary}`}
+        summary={`${activeFilterTarget.label} - ${scoreSummary} - ${classSummary}`}
         expanded={expandedSectionId === "show-filters"}
         onToggle={onToggleSection}
       >
+        <label className="field-row">
+          <span>Target</span>
+          <select
+            className="model-select"
+            value={filterTarget}
+            onChange={(event) => onFilterTargetChange(event.target.value)}
+            disabled={!hasWorkspace}
+          >
+            {FILTER_TARGET_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id} disabled={!filterTargetAvailability[option.id]}>
+                {option.label}{filterTargetAvailability[option.id] ? "" : " (Reserved)"}
+              </option>
+            ))}
+          </select>
+        </label>
         <NumberField label="Score >=" value={scoreThreshold} step={0.01} onChange={onScoreThresholdChange} disabled={!hasWorkspace} />
-        <p className="panel-hint">Low-score auto-label boxes are hidden from the list and 3D view. Manual boxes stay visible.</p>
+        <p className="panel-hint">Filters apply to the selected annotation target. Segmentation filtering is reserved until pixel-level annotation editing is added.</p>
         {!hasWorkspace ? <p className="panel-hint">Open File, choose a dataset scene, and load it before showing frames.</p> : null}
 
         <div className="section-head filter-section-head">

@@ -21,9 +21,71 @@ function formatProgressPercent(value, precise = false) {
   return precise ? `${clamped.toFixed(1)}%` : `${Math.round(clamped)}%`;
 }
 
+function CompactJobBox({ launchState, job, active, canCancel, onCancel }) {
+  if (launchState) {
+    return (
+      <div className="job-box">
+        <div className="job-status job-status-preparing">preparing</div>
+        <div>{launchState.message}</div>
+        {launchState.detail ? <div className="job-subtle">{launchState.detail}</div> : null}
+        <div className="job-progress-header">
+          <span>Preparing...</span>
+          <span>Request pending</span>
+        </div>
+        <div className="job-progress-track is-active is-indeterminate" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <div className="job-progress-fill" style={{ width: "28%" }} />
+        </div>
+      </div>
+    );
+  }
+  if (!job) {
+    return null;
+  }
+  const percent = clampProgressPercent((job.progress || 0) * 100);
+  return (
+    <div className="job-box">
+      <div className={`job-status job-status-${job.status}`}>{job.status}</div>
+      <div>{job.message}</div>
+      <div className="job-meta">
+        {job.processed_frames} / {job.total_frames}
+      </div>
+      {job.current_frame != null ? <div className="job-subtle">Current frame: {job.current_frame}</div> : null}
+      {job.error ? <div className="job-error">{job.error}</div> : null}
+      <div className="job-progress-header">
+        <span>{formatProgressPercent(percent, active)}</span>
+        <span>{job.processed_frames} frames done</span>
+      </div>
+      <div
+        className={`job-progress-track ${active ? "is-active" : ""}`}
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={Math.round(percent)}
+      >
+        <div className="job-progress-fill" style={{ width: `${percent}%` }} />
+      </div>
+      {active ? (
+        <div className="button-row job-controls">
+          <button className="danger-button" onClick={onCancel} disabled={!canCancel}>
+            Stop
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function AutoLabelingMenuPanel({
   hasWorkspace,
   modelProfiles,
+  yolo2dDetectionModelProfiles,
+  selected2dDetectionModelProfile,
+  selected2dDetectionModelProfileId,
+  onSelect2dDetectionModelProfile,
+  yolo2dSegmentationModelProfiles,
+  selected2dSegmentationModelProfile,
+  selected2dSegmentationModelProfileId,
+  onSelect2dSegmentationModelProfile,
   selectedModelProfile,
   selectedModelProfileId,
   onSelectModelProfile,
@@ -33,6 +95,8 @@ export default function AutoLabelingMenuPanel({
   setStartFrame,
   setEndFrame,
   onRunAutoLabel,
+  onRun2dObjectDetection,
+  onRun2dSemanticSegmentation,
   onRunTracking,
   trackingMethod,
   onTrackingMethodChange,
@@ -58,11 +122,18 @@ export default function AutoLabelingMenuPanel({
   onToggleSection
 }) {
   const canAnnotateBoxes = hasWorkspace && (capabilityReport?.can_annotate_3d_box ?? true);
-  const autoLabelJob = jobStatus?.task_name === "3D Tracking" ? null : jobStatus;
+  const canAnnotate2d = hasWorkspace && Boolean(capabilityReport?.camera_available);
+  const autoLabelJob = jobStatus?.task_name === "3D Bounding Box" ? jobStatus : null;
+  const box2dJob = jobStatus?.task_name === "2D Object Detection" ? jobStatus : null;
+  const segmentationJob = jobStatus?.task_name === "2D Semantic Segmentation" ? jobStatus : null;
   const trackingJob = jobStatus?.task_name === "3D Tracking" ? jobStatus : null;
   const autoLabelLaunchState = jobLaunchState?.type === "auto-label" ? jobLaunchState : null;
+  const box2dLaunchState = jobLaunchState?.type === "2d-detection" ? jobLaunchState : null;
+  const segmentationLaunchState = jobLaunchState?.type === "2d-segmentation" ? jobLaunchState : null;
   const trackingLaunchState = jobLaunchState?.type === "tracking" ? jobLaunchState : null;
   const autoLabelJobIsActive = Boolean(autoLabelJob && ["queued", "running", "paused"].includes(autoLabelJob.status));
+  const box2dJobIsActive = Boolean(box2dJob && ["queued", "running", "paused"].includes(box2dJob.status));
+  const segmentationJobIsActive = Boolean(segmentationJob && ["queued", "running", "paused"].includes(segmentationJob.status));
   const trackingJobIsActive = Boolean(trackingJob && ["queued", "running"].includes(trackingJob.status));
   const canPause =
     autoLabelJobIsActive &&
@@ -71,6 +142,8 @@ export default function AutoLabelingMenuPanel({
     !autoLabelJob.cancel_requested;
   const canResume = autoLabelJobIsActive && autoLabelJob.status === "paused";
   const canCancel = autoLabelJobIsActive && !autoLabelJob.cancel_requested;
+  const canCancelBox2d = box2dJobIsActive && !box2dJob.cancel_requested;
+  const canCancelSegmentation = segmentationJobIsActive && !segmentationJob.cancel_requested;
   const canCancelTracking = trackingJobIsActive && !trackingJob.cancel_requested;
   const rawJobPercent = autoLabelJob ? clampProgressPercent((autoLabelJob.progress || 0) * 100) : 0;
   const isWarmupPhase =
@@ -114,6 +187,20 @@ export default function AutoLabelingMenuPanel({
           : trackingReadiness?.next_missing_frame != null
             ? `Locked - next ${trackingReadiness.next_missing_frame}`
             : "Locked";
+  const box2dSummary = !hasWorkspace
+    ? "Load a dataset first"
+    : box2dLaunchState
+      ? "Preparing..."
+      : box2dJob
+        ? `${box2dJob.status} - ${formatProgressPercent((box2dJob.progress || 0) * 100, box2dJobIsActive)}`
+        : selected2dDetectionModelProfile?.name || "No YOLO model";
+  const segmentationSummary = !hasWorkspace
+    ? "Load a dataset first"
+    : segmentationLaunchState
+      ? "Preparing..."
+      : segmentationJob
+        ? `${segmentationJob.status} - ${formatProgressPercent((segmentationJob.progress || 0) * 100, segmentationJobIsActive)}`
+        : selected2dSegmentationModelProfile?.name || "No YOLO model";
 
   return (
     <>
@@ -336,7 +423,7 @@ export default function AutoLabelingMenuPanel({
       <SidebarSection
         id="auto-labeling-2d-detection"
         title="2D Object Detection"
-        summary="YOLO reserved"
+        summary={box2dSummary}
         expanded={expandedSectionId === "auto-labeling-2d-detection"}
         onToggle={onToggleSection}
       >
@@ -344,13 +431,95 @@ export default function AutoLabelingMenuPanel({
           <div>Provider</div>
           <strong>YOLO</strong>
           <div>Status</div>
-          <strong>Worker ready, API task pending</strong>
+          <strong>{selected2dDetectionModelProfile ? "Ready" : "No model"}</strong>
           <div>Output</div>
-          <strong>2D boxes / masks</strong>
+          <strong>2D boxes</strong>
         </div>
-        <p className="panel-hint">The worker-base YOLO provider exists, but this task is not connected to the API/Web job flow yet.</p>
+        <label className="field-row">
+          <span>Weight</span>
+          <select
+            className="model-select"
+            value={selected2dDetectionModelProfileId}
+            onChange={(event) => onSelect2dDetectionModelProfile(event.target.value)}
+            disabled={!yolo2dDetectionModelProfiles.length || !canAnnotate2d || hasActiveJob}
+          >
+            {yolo2dDetectionModelProfiles.length ? (
+              yolo2dDetectionModelProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name} / {profile.weight_name}
+                </option>
+              ))
+            ) : (
+              <option value="">No YOLO detection model available</option>
+            )}
+          </select>
+        </label>
+        <NumberField label="Start" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotate2d || hasActiveJob} />
+        <NumberField label="End" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotate2d || hasActiveJob} />
+        {!hasWorkspace ? <p className="panel-hint">2D detection is unavailable until a dataset is loaded into the workspace.</p> : null}
+        {hasWorkspace && !canAnnotate2d ? <p className="panel-hint">2D detection requires camera frames.</p> : null}
+        <CompactJobBox
+          launchState={box2dLaunchState}
+          job={box2dJob}
+          active={box2dJobIsActive}
+          canCancel={canCancelBox2d}
+          onCancel={onCancelAutoLabel}
+        />
         <div className="section-action-row">
-          <button disabled>Run</button>
+          <button className="primary-button" onClick={onRun2dObjectDetection} disabled={!selected2dDetectionModelProfile || hasActiveJob || !canAnnotate2d}>
+            Run
+          </button>
+        </div>
+      </SidebarSection>
+
+      <SidebarSection
+        id="auto-labeling-2d-segmentation"
+        title="2D Semantic Segmentation"
+        summary={segmentationSummary}
+        expanded={expandedSectionId === "auto-labeling-2d-segmentation"}
+        onToggle={onToggleSection}
+      >
+        <div className="meta-grid">
+          <div>Provider</div>
+          <strong>YOLO</strong>
+          <div>Status</div>
+          <strong>{selected2dSegmentationModelProfile ? "Ready" : "No model"}</strong>
+          <div>Output</div>
+          <strong>Camera semantic mask</strong>
+        </div>
+        <label className="field-row">
+          <span>Weight</span>
+          <select
+            className="model-select"
+            value={selected2dSegmentationModelProfileId}
+            onChange={(event) => onSelect2dSegmentationModelProfile(event.target.value)}
+            disabled={!yolo2dSegmentationModelProfiles.length || !canAnnotate2d || hasActiveJob}
+          >
+            {yolo2dSegmentationModelProfiles.length ? (
+              yolo2dSegmentationModelProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name} / {profile.weight_name}
+                </option>
+              ))
+            ) : (
+              <option value="">No YOLO segmentation model available</option>
+            )}
+          </select>
+        </label>
+        <NumberField label="Start" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotate2d || hasActiveJob} />
+        <NumberField label="End" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotate2d || hasActiveJob} />
+        <p className="panel-hint">Successful runs write a camera semantic layer that can be shown from Show / Layers / Camera Semantic.</p>
+        <CompactJobBox
+          launchState={segmentationLaunchState}
+          job={segmentationJob}
+          active={segmentationJobIsActive}
+          canCancel={canCancelSegmentation}
+          onCancel={onCancelAutoLabel}
+        />
+        <div className="section-action-row">
+          <button className="primary-button" onClick={onRun2dSemanticSegmentation} disabled={!selected2dSegmentationModelProfile || hasActiveJob || !canAnnotate2d}>
+            Run
+          </button>
         </div>
       </SidebarSection>
     </>

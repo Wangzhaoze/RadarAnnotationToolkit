@@ -90,6 +90,18 @@ def _semantic_availability(adapter, frame_index: int, summary: dict) -> Semantic
     )
 
 
+def _merge_annotation_semantics(sequence_id: str, frame_index: int, availability: SemanticAvailability) -> SemanticAvailability:
+    camera = dict(availability.camera)
+    for name in camera:
+        if annotation_store.has_camera_semantic(sequence_id, frame_index, name):
+            camera[name] = True
+    return SemanticAvailability(
+        lidar=availability.lidar,
+        camera=camera,
+        radar=availability.radar,
+    )
+
+
 def _radar_preview_urls(adapter, sequence_id: str, frame_index: int, summary: dict) -> dict[str, str | None]:
     urls: dict[str, str | None] = {}
     for name in summary["radar"]:
@@ -173,13 +185,18 @@ def get_frame(sequence_id: str, frame_index: int):
         summary = state.adapter.get_frame_summary(frame_index)
     except (KeyError, IndexError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    semantic_available = _semantic_availability(state.adapter, frame_index, summary)
+    semantic_available = _merge_annotation_semantics(
+        sequence_id,
+        frame_index,
+        _semantic_availability(state.adapter, frame_index, summary),
+    )
     layer_availability = _layer_availability(state.adapter, frame_index, summary, semantic_available)
     return FrameDetail(
         sequence_id=sequence_id,
         frame_index=frame_index,
         timestamp=summary["timestamp"],
         annotations=annotation_store.get_annotations(sequence_id, frame_index),
+        annotations_2d=annotation_store.get_annotations_2d(sequence_id, frame_index),
         asset_urls=FrameAssetUrls(
             lidar=(f"/sequences/{sequence_id}/frames/{frame_index}/lidar" if summary.get("lidar_path") else None),
             camera={
@@ -266,7 +283,8 @@ def get_camera_asset(sequence_id: str, frame_index: int, camera_name: str):
 @router.get("/sequences/{sequence_id}/frames/{frame_index}/camera/{camera_name}/semantic")
 def get_camera_semantic_asset(sequence_id: str, frame_index: int, camera_name: str):
     try:
-        path = dataset_registry.get(sequence_id).adapter.get_camera_semantic_path(frame_index, camera_name)
+        generated_path = annotation_store.get_camera_semantic_path(sequence_id, frame_index, camera_name)
+        path = generated_path if generated_path.exists() else dataset_registry.get(sequence_id).adapter.get_camera_semantic_path(frame_index, camera_name)
         if not path:
             raise HTTPException(status_code=404, detail="Camera semantic frame not available")
         media_type, _ = mimetypes.guess_type(str(path))
