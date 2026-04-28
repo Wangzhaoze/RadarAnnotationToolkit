@@ -79,6 +79,7 @@ function CompactJobBox({ launchState, job, active, canCancel, onCancel }) {
 export default function AutoLabelingMenuPanel({
   hasWorkspace,
   modelProfiles,
+  modelCatalogStatus = "idle",
   yolo2dDetectionModelProfiles,
   selected2dDetectionModelProfile,
   selected2dDetectionModelProfileId,
@@ -184,9 +185,13 @@ export default function AutoLabelingMenuPanel({
         : trackingJob?.stage === "writing_results"
           ? "frames written"
           : "frames handled";
+  const modelCatalogIsLoading = modelCatalogStatus === "loading";
+  const modelCatalogHasError = modelCatalogStatus === "error";
 
   const detectionSummary = !hasWorkspace
     ? "Load a dataset first"
+    : modelCatalogIsLoading
+      ? "Checking models..."
     : autoLabelLaunchState
       ? "Preparing..."
       : autoLabelJob
@@ -205,6 +210,8 @@ export default function AutoLabelingMenuPanel({
             : "Locked";
   const box2dSummary = !hasWorkspace
     ? "Load a dataset first"
+    : modelCatalogIsLoading
+      ? "Checking models..."
     : box2dLaunchState
       ? "Preparing..."
       : box2dJob
@@ -212,6 +219,8 @@ export default function AutoLabelingMenuPanel({
         : selected2dDetectionModelProfile?.name || "No YOLO model";
   const segmentationSummary = !hasWorkspace
     ? "Load a dataset first"
+    : modelCatalogIsLoading
+      ? "Checking models..."
     : segmentationLaunchState
       ? "Preparing..."
       : segmentationJob
@@ -257,6 +266,8 @@ export default function AutoLabelingMenuPanel({
         <NumberField label="Start" helpKey="frameStart" value={startFrame} step={1} onChange={setStartFrame} disabled={!canRun3dDetection} />
         <NumberField label="End" helpKey="frameEnd" value={endFrame} step={1} onChange={setEndFrame} disabled={!canRun3dDetection} />
         {!hasWorkspace ? <p className="panel-hint">Auto-labeling is unavailable until a dataset is loaded into the workspace.</p> : null}
+        {hasWorkspace && modelCatalogIsLoading ? <p className="panel-hint">Model availability is being checked in the background.</p> : null}
+        {hasWorkspace && modelCatalogHasError ? <p className="panel-hint">Model availability could not be checked yet. Data viewing is unaffected.</p> : null}
         {hasWorkspace && !canRun3dDetection && isCameraOnly3dModel ? <p className="panel-hint">WildDet3D requires camera frames, camera intrinsics, and a LiDAR/Camera transform.</p> : null}
         {hasWorkspace && !canRun3dDetection && !isCameraOnly3dModel ? <p className="panel-hint">This 3D detector is unavailable until the dataset provides LiDAR frames.</p> : null}
         <p className="panel-hint">Tracking unlocks only after this whole frame range has been processed by frame-wise detection, including frames with zero boxes.</p>
@@ -467,6 +478,8 @@ export default function AutoLabelingMenuPanel({
         <NumberField label="Start" helpKey="frameStart" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotate2d || hasActiveJob} />
         <NumberField label="End" helpKey="frameEnd" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotate2d || hasActiveJob} />
         {!hasWorkspace ? <p className="panel-hint">2D detection is unavailable until a dataset is loaded into the workspace.</p> : null}
+        {hasWorkspace && modelCatalogIsLoading ? <p className="panel-hint">Model availability is being checked in the background.</p> : null}
+        {hasWorkspace && modelCatalogHasError ? <p className="panel-hint">Model availability could not be checked yet. Data viewing is unaffected.</p> : null}
         {hasWorkspace && !canAnnotate2d ? <p className="panel-hint">2D detection requires camera frames.</p> : null}
         <CompactJobBox
           launchState={box2dLaunchState}
@@ -518,6 +531,8 @@ export default function AutoLabelingMenuPanel({
         </label>
         <NumberField label="Start" helpKey="frameStart" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotate2d || hasActiveJob} />
         <NumberField label="End" helpKey="frameEnd" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotate2d || hasActiveJob} />
+        {hasWorkspace && modelCatalogIsLoading ? <p className="panel-hint">Model availability is being checked in the background.</p> : null}
+        {hasWorkspace && modelCatalogHasError ? <p className="panel-hint">Model availability could not be checked yet. Data viewing is unaffected.</p> : null}
         <p className="panel-hint">Successful runs write a camera semantic layer that can be shown from Show / Layers / Camera Semantic.</p>
         <CompactJobBox
           launchState={segmentationLaunchState}

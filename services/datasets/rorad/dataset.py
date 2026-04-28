@@ -93,6 +93,12 @@ def _image_files(root: Path) -> list[Path]:
     return sorted(path for path in root.iterdir() if path.is_file() and path.suffix.lower() in RORAD_RAMAP_EXTENSIONS)
 
 
+def _has_file_with_suffix(root: Path, suffixes: set[str]) -> bool:
+    if not root.exists():
+        return False
+    return any(path.is_file() and path.suffix.lower() in suffixes for path in root.iterdir())
+
+
 def _probe_rorad_scene(scene_id: str) -> tuple[bool, str | None]:
     scene_root = _rorad_scene_root(scene_id)
     lidar_root = scene_root / "lidar"
@@ -104,7 +110,7 @@ def _probe_rorad_scene(scene_id: str) -> tuple[bool, str | None]:
         return False, f"{scene_id} does not contain LiDAR .bin files"
     if next(camera_root.glob("*.png"), None) is None:
         return False, f"{scene_id} does not contain camera .png files"
-    if not _image_files(ramap_root):
+    if not _has_file_with_suffix(ramap_root, RORAD_RAMAP_EXTENSIONS):
         return False, f"{scene_id} does not contain RAMap image files in ramaps"
     return True, None
 

@@ -350,6 +350,7 @@ export default function AppWorkbench() {
   const [trackingMeasurementNoiseSize, setTrackingMeasurementNoiseSize] = useState(DEFAULT_TRACKING_MEASUREMENT_NOISE_SIZE);
   const [trackingYawSmoothingAlpha, setTrackingYawSmoothingAlpha] = useState(DEFAULT_TRACKING_YAW_SMOOTHING_ALPHA);
   const [modelProfiles, setModelProfiles] = useState(FALLBACK_MODEL_PROFILES);
+  const [modelCatalogStatus, setModelCatalogStatus] = useState("idle");
   const [selectedModelProfileId, setSelectedModelProfileId] = useState(FALLBACK_MODEL_PROFILES[0].id);
   const [selected2dDetectionModelProfileId, setSelected2dDetectionModelProfileId] = useState("");
   const [selected2dSegmentationModelProfileId, setSelected2dSegmentationModelProfileId] = useState("");
@@ -373,6 +374,8 @@ export default function AppWorkbench() {
   const frameRequestIdRef = useRef(0);
   const frameAbortControllerRef = useRef(null);
   const jobLaunchLockRef = useRef(false);
+  const modelCatalogRequestRef = useRef(null);
+  const modelCatalogTimerRef = useRef(null);
   const jobSocketRef = useRef(null);
   const previousJobRef = useRef(null);
   const layerModeTouchedRef = useRef({ lidar: false, camera: false, radar: false });
@@ -634,6 +637,82 @@ export default function AppWorkbench() {
     }
   }
 
+  function refreshTrackingReadinessIfVisible() {
+    if (activeMenu !== "auto-labeling" || expandedSidebarSection !== "auto-labeling-tracking") {
+      return Promise.resolve(null);
+    }
+    return refreshTrackingReadiness();
+  }
+
+  async function loadModelProfilesInBackground() {
+    if (modelCatalogRequestRef.current) {
+      return modelCatalogRequestRef.current;
+    }
+    setModelCatalogStatus("loading");
+    const requestPromise = request("/jobs/auto-label/models")
+      .then((payload) => {
+        const nextProfiles = (payload.profiles || []).filter((profile) => profile.is_available);
+        if (!nextProfiles.length) {
+          setModelProfiles([]);
+          setSelectedModelProfileId("");
+          setSelected2dDetectionModelProfileId("");
+          setSelected2dSegmentationModelProfileId("");
+          setModelCatalogStatus("ready");
+          return payload;
+        }
+        setModelProfiles(nextProfiles);
+        const nextOpenpcdetProfiles = nextProfiles.filter((profile) => profile.provider !== "yolo");
+        const nextYolo2dDetectionProfiles = nextProfiles.filter(
+          (profile) => profile.provider === "yolo" && profile.task === "2d_object_detection"
+        );
+        const nextYolo2dSegmentationProfiles = nextProfiles.filter(
+          (profile) => profile.provider === "yolo" && profile.task === "2d_semantic_segmentation"
+        );
+        setSelectedModelProfileId((current) => {
+          if (nextOpenpcdetProfiles.some((profile) => profile.id === current)) {
+            return current;
+          }
+          if (payload.default_model_profile_id && nextOpenpcdetProfiles.some((profile) => profile.id === payload.default_model_profile_id)) {
+            return payload.default_model_profile_id;
+          }
+          return nextOpenpcdetProfiles[0]?.id || "";
+        });
+        setSelected2dDetectionModelProfileId((current) => {
+          if (nextYolo2dDetectionProfiles.some((profile) => profile.id === current)) {
+            return current;
+          }
+          return nextYolo2dDetectionProfiles[0]?.id || "";
+        });
+        setSelected2dSegmentationModelProfileId((current) => {
+          if (nextYolo2dSegmentationProfiles.some((profile) => profile.id === current)) {
+            return current;
+          }
+          return nextYolo2dSegmentationProfiles[0]?.id || "";
+        });
+        setModelCatalogStatus("ready");
+        return payload;
+      })
+      .catch((error) => {
+        setModelCatalogStatus("error");
+        return null;
+      })
+      .finally(() => {
+        modelCatalogRequestRef.current = null;
+      });
+    modelCatalogRequestRef.current = requestPromise;
+    return requestPromise;
+  }
+
+  function scheduleModelProfileLoad() {
+    if (modelCatalogStatus === "loading" || modelCatalogStatus === "ready" || modelCatalogTimerRef.current) {
+      return;
+    }
+    modelCatalogTimerRef.current = window.setTimeout(() => {
+      modelCatalogTimerRef.current = null;
+      loadModelProfilesInBackground();
+    }, 300);
+  }
+
   async function loadSelectedDataset({ datasetId = selectedDatasetId, sceneId = selectedSceneId, announce = true } = {}) {
     setIsDatasetLoading(true);
     if (announce) {
@@ -645,18 +724,21 @@ export default function AppWorkbench() {
         body: JSON.stringify({ dataset_id: datasetId, scene_id: sceneId })
       });
       setRamapCacheStatus(payload?.ramap_cache || null);
-      const loadedSequences = await refreshSequences();
       const loadedSequence =
-        payload?.sequence || loadedSequences.find((sequence) => sequence.id === payload?.sequence?.id) || null;
+        payload?.sequence ||
+        (payload?.sequences || []).find((sequence) => sequence.id === payload?.current_sequence_id) ||
+        (payload?.sequences || [])[0] ||
+        null;
       if (loadedSequence) {
         setSequences([loadedSequence]);
       }
-      if (payload?.sequence?.id) {
-        setCurrentSequenceId(payload.sequence.id);
+      if (loadedSequence?.id) {
+        setCurrentSequenceId(loadedSequence.id);
       }
       setFrameIndex(0);
       setSelectedAnnotationId(null);
       setLidarSemanticLabels(null);
+      setTrackingReadiness(createTrackingReadinessFallback("Open Tracking to check whether the selected frame range is ready."));
       setLayerModes(DEFAULT_LAYER_MODES);
       layerModeTouchedRef.current = { lidar: false, camera: false, radar: false };
       setIsPlaying(false);
@@ -894,43 +976,12 @@ export default function AppWorkbench() {
   }, []);
 
   useEffect(() => {
-    request("/jobs/auto-label/models")
-      .then((payload) => {
-        const nextProfiles = (payload.profiles || []).filter((profile) => profile.is_available);
-        if (!nextProfiles.length) {
-          setModelProfiles([]);
-          setSelectedModelProfileId("");
-          logMessage("warn", "No available auto-label models were reported by the worker.");
-          return;
-        }
-        setModelProfiles(nextProfiles);
-        const nextOpenpcdetProfiles = nextProfiles.filter((profile) => profile.provider !== "yolo");
-        const nextYolo2dDetectionProfiles = nextProfiles.filter((profile) => profile.provider === "yolo" && profile.task === "2d_object_detection");
-        const nextYolo2dSegmentationProfiles = nextProfiles.filter((profile) => profile.provider === "yolo" && profile.task === "2d_semantic_segmentation");
-        setSelectedModelProfileId((current) => {
-          if (nextOpenpcdetProfiles.some((profile) => profile.id === current)) {
-            return current;
-          }
-          if (payload.default_model_profile_id && nextOpenpcdetProfiles.some((profile) => profile.id === payload.default_model_profile_id)) {
-            return payload.default_model_profile_id;
-          }
-          return nextOpenpcdetProfiles[0]?.id || "";
-        });
-        setSelected2dDetectionModelProfileId((current) => {
-          if (nextYolo2dDetectionProfiles.some((profile) => profile.id === current)) {
-            return current;
-          }
-          return nextYolo2dDetectionProfiles[0]?.id || "";
-        });
-        setSelected2dSegmentationModelProfileId((current) => {
-          if (nextYolo2dSegmentationProfiles.some((profile) => profile.id === current)) {
-            return current;
-          }
-          return nextYolo2dSegmentationProfiles[0]?.id || "";
-        });
-        logMessage("success", `Loaded ${nextProfiles.length} auto-label model${nextProfiles.length === 1 ? "" : "s"}.`);
-      })
-      .catch((error) => logMessage("error", `Model catalog load failed: ${error.message}`));
+    return () => {
+      if (modelCatalogTimerRef.current) {
+        window.clearTimeout(modelCatalogTimerRef.current);
+        modelCatalogTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -1052,8 +1103,14 @@ export default function AppWorkbench() {
   }, [currentSequenceId]);
 
   useEffect(() => {
-    refreshTrackingReadiness().catch(() => null);
-  }, [currentSequenceId, startFrame, endFrame, jobStatus?.id, jobStatus?.status]);
+    if (!currentSequenceId || activeMenu !== "auto-labeling" || expandedSidebarSection !== "auto-labeling-tracking") {
+      return undefined;
+    }
+    const timerId = window.setTimeout(() => {
+      refreshTrackingReadinessIfVisible().catch(() => null);
+    }, 200);
+    return () => window.clearTimeout(timerId);
+  }, [activeMenu, currentSequenceId, expandedSidebarSection, startFrame, endFrame, jobStatus?.id, jobStatus?.status]);
 
   async function refreshFrame(sequenceId, nextFrameIndex) {
     const requestId = frameRequestIdRef.current + 1;
@@ -1084,6 +1141,7 @@ export default function AppWorkbench() {
         detail.annotations.some((annotation) => annotation.id === current) ? current : detail.annotations[0]?.id || null
       );
       updateStatus(`Frame ${nextFrameIndex} loaded.`);
+      scheduleModelProfileLoad();
     } catch (error) {
       if (error?.name === "AbortError") {
         return;
@@ -1537,7 +1595,7 @@ export default function AppWorkbench() {
         current ? { ...current, annotations: [...current.annotations, annotation] } : current
       );
       setSelectedAnnotationId(annotation.id);
-      refreshTrackingReadiness().catch(() => null);
+      refreshTrackingReadinessIfVisible().catch(() => null);
       logMessage("success", `Created annotation ${annotation.id}.`);
     } catch (error) {
       logMessage("error", `Annotation creation failed: ${error.message}`);
@@ -1558,7 +1616,7 @@ export default function AppWorkbench() {
             }
           : current
       );
-      refreshTrackingReadiness().catch(() => null);
+      refreshTrackingReadinessIfVisible().catch(() => null);
       logMessage("warn", `Deleted annotation ${selectedAnnotationId}.`);
       setSelectedAnnotationId(null);
     } catch (error) {
@@ -1572,7 +1630,7 @@ export default function AppWorkbench() {
     }
     try {
       await persistAnnotationProgress("Annotations saved.");
-      refreshTrackingReadiness().catch(() => null);
+      refreshTrackingReadinessIfVisible().catch(() => null);
     } catch (error) {
       logMessage("error", `Save failed: ${error.message}`);
     }
@@ -1605,6 +1663,7 @@ export default function AppWorkbench() {
             setEndFrame={setEndFrame}
             isAnnotationMode={isAnnotationMode}
             modelProfiles={openpcdetModelProfiles}
+            modelCatalogStatus={modelCatalogStatus}
             selectedModelProfile={selectedModelProfile}
             selectedModelProfileId={selectedModelProfileId}
             onSelectModelProfile={setSelectedModelProfileId}

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -30,6 +31,7 @@ from app.models import (
 
 DEFAULT_DATASET_PLUGIN_ROOT = Path(__file__).resolve().parents[3] / "datasets"
 DATASET_PLUGIN_ROOT = Path(os.getenv("DATASET_PLUGIN_ROOT", str(DEFAULT_DATASET_PLUGIN_ROOT)))
+DATASET_CATALOG_CACHE_SECONDS = float(os.getenv("DATASET_CATALOG_CACHE_SECONDS", "30"))
 
 
 @dataclass
@@ -54,6 +56,7 @@ class DatasetRegistry:
     def __init__(self) -> None:
         self._sequences: dict[str, SequenceState] = {}
         self._dataset_definitions = self._discover_dataset_definitions()
+        self._catalog_cache: tuple[float, DatasetCatalogResponse] | None = None
 
     def clear(self) -> None:
         self._sequences.clear()
@@ -62,6 +65,12 @@ class DatasetRegistry:
         return self._build_adapter(config)
 
     def list_dataset_catalog(self) -> DatasetCatalogResponse:
+        now = time.monotonic()
+        if self._catalog_cache is not None:
+            cached_at, cached_catalog = self._catalog_cache
+            if now - cached_at <= DATASET_CATALOG_CACHE_SECONDS:
+                return cached_catalog
+
         datasets = [self._catalog_entry_from_spec(spec) for spec in self._dataset_definitions.values()]
         default_dataset_id = "radelft" if "radelft" in self._dataset_definitions else (datasets[0].id if datasets else None)
         default_scene_id = None
@@ -69,11 +78,13 @@ class DatasetRegistry:
             default_dataset = next((dataset for dataset in datasets if dataset.id == default_dataset_id), None)
             if default_dataset:
                 default_scene_id = self._choose_default_scene(default_dataset)
-        return DatasetCatalogResponse(
+        catalog = DatasetCatalogResponse(
             default_dataset_id=default_dataset_id,
             default_scene_id=default_scene_id,
             datasets=datasets,
         )
+        self._catalog_cache = (now, catalog)
+        return catalog
 
     def resolve_catalog_config(self, dataset_id: str, scene_id: str | None = None) -> DatasetConfig:
         spec = self._dataset_definitions.get(dataset_id)

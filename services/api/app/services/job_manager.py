@@ -160,15 +160,11 @@ class JobManager:
     def get_tracking_readiness(self, *, sequence_id: str, start_frame: int, end_frame: int) -> TrackingReadinessResponse:
         self._validate_sequence_frame_range(sequence_id, start_frame, end_frame)
         total_frames = end_frame - start_frame + 1
-        recorded_frames = 0
-        next_missing_frame = None
-
-        for frame_index in range(start_frame, end_frame + 1):
-            if self.annotation_store.has_detection_record(sequence_id, frame_index):
-                recorded_frames += 1
-                continue
-            if next_missing_frame is None:
-                next_missing_frame = frame_index
+        recorded_frames, next_missing_frame = self.annotation_store.detection_record_summary(
+            sequence_id,
+            start_frame,
+            end_frame,
+        )
 
         ready = recorded_frames == total_frames
         if ready:

@@ -23,6 +23,7 @@ class AnnotationStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, OrderedDict[int, list[Box3D]]] = {}
         self._known_frames: dict[str, set[int]] = {}
+        self._detection_completed_frames: dict[str, set[int]] = {}
         self._max_cached_frames = 12
 
     def set_root(self, root: str) -> None:
@@ -30,6 +31,7 @@ class AnnotationStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self._cache.clear()
         self._known_frames.clear()
+        self._detection_completed_frames.clear()
 
     def _sequence_root(self, sequence_id: str) -> Path:
         return self.root / sequence_id
@@ -51,13 +53,26 @@ class AnnotationStore:
     def _index_sequence(self, sequence_id: str) -> None:
         frame_dir = self._sequence_root(sequence_id) / "frames"
         known_frames: set[int] = set()
+        detection_completed_frames: set[int] = set()
         if frame_dir.exists():
             for frame_file in frame_dir.glob("*.json"):
                 try:
-                    known_frames.add(int(frame_file.stem))
+                    frame_index = int(frame_file.stem)
                 except ValueError:
                     continue
+                known_frames.add(frame_index)
+                try:
+                    payload = json.loads(frame_file.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                meta = payload.get("meta")
+                if isinstance(meta, dict) and "detection_completed" in meta:
+                    if meta["detection_completed"]:
+                        detection_completed_frames.add(frame_index)
+                else:
+                    detection_completed_frames.add(frame_index)
         self._known_frames[sequence_id] = known_frames
+        self._detection_completed_frames[sequence_id] = detection_completed_frames
 
     def get_annotations(self, sequence_id: str, frame_index: int) -> list[Box3D]:
         return list(self._read_frame(sequence_id, frame_index))
@@ -72,6 +87,9 @@ class AnnotationStore:
         return bool(self._read_frame(sequence_id, frame_index))
 
     def has_detection_record(self, sequence_id: str, frame_index: int) -> bool:
+        indexed = self._detection_completed_frames.get(sequence_id)
+        if indexed is not None:
+            return frame_index in indexed
         payload = self._read_frame_payload(sequence_id, frame_index)
         if payload is None:
             return False
@@ -79,6 +97,21 @@ class AnnotationStore:
         if isinstance(meta, dict) and "detection_completed" in meta:
             return bool(meta["detection_completed"])
         return True
+
+    def detection_record_summary(self, sequence_id: str, start_frame: int, end_frame: int) -> tuple[int, int | None]:
+        completed_frames = self._detection_completed_frames.get(sequence_id)
+        if completed_frames is None:
+            self._index_sequence(sequence_id)
+            completed_frames = self._detection_completed_frames.get(sequence_id, set())
+        recorded_frames = 0
+        next_missing_frame = None
+        for frame_index in range(start_frame, end_frame + 1):
+            if frame_index in completed_frames:
+                recorded_frames += 1
+                continue
+            if next_missing_frame is None:
+                next_missing_frame = frame_index
+        return recorded_frames, next_missing_frame
 
     def has_2d_detection_record(self, sequence_id: str, frame_index: int) -> bool:
         return self._has_meta_flag(sequence_id, frame_index, "yolo_2d_detection_completed")
@@ -270,6 +303,11 @@ class AnnotationStore:
         }
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         self._known_frames.setdefault(sequence_id, set()).add(frame_index)
+        detection_completed_frames = self._detection_completed_frames.setdefault(sequence_id, set())
+        if meta.get("detection_completed"):
+            detection_completed_frames.add(frame_index)
+        else:
+            detection_completed_frames.discard(frame_index)
         self._remember_frame(sequence_id, frame_index, annotations)
 
     def save_sequence(self, summary: SequenceSummary) -> tuple[str, list[str]]:
