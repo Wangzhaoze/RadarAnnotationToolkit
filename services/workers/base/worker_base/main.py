@@ -19,6 +19,11 @@ from tracking.service import (
     TrackingJobStatusResponse,
     engine as tracking_engine,
 )
+from WildDet3D.infer import (
+    WildDet3DInferenceRequest,
+    WildDet3DInferenceResponse,
+    engine as wilddet3d_engine,
+)
 from yolo.infer_seg import YoloInferenceRequest, YoloInferenceResponse, engine as yolo_engine
 
 
@@ -34,9 +39,11 @@ _original_catalog = openpcdet_main.engine.catalog
 def _merged_catalog():
     catalog = _original_catalog()
     yolo_catalog = yolo_engine.catalog()
-    catalog.providers = ["openpcdet", "yolo", "tracking"]
+    wilddet3d_catalog = wilddet3d_engine.catalog()
+    catalog.providers = ["openpcdet", "wilddet3d", "yolo", "tracking"]
     catalog.provider_profiles = {
         "openpcdet": [profile.model_dump(mode="json") for profile in catalog.profiles],
+        "wilddet3d": [profile.model_dump(mode="json") for profile in wilddet3d_catalog.profiles],
         "yolo": [profile.model_dump(mode="json") for profile in yolo_catalog.profiles],
         "tracking": [
             {
@@ -65,6 +72,20 @@ def infer_yolo(payload: YoloInferenceRequest):
     except Exception as exc:
         detail = str(exc).strip() or exc.__class__.__name__
         logger.exception("YOLO inference failed for model_id=%s items=%s", payload.model_id, len(payload.items))
+        raise HTTPException(status_code=500, detail=detail) from exc
+
+
+@app.post("/infer/wilddet3d", response_model=WildDet3DInferenceResponse)
+def infer_wilddet3d(payload: WildDet3DInferenceRequest):
+    try:
+        return wilddet3d_engine.infer(payload)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        logger.exception("WildDet3D inference failed for model_id=%s items=%s", payload.model_id, len(payload.items))
         raise HTTPException(status_code=500, detail=detail) from exc
 
 

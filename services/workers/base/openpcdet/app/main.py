@@ -25,6 +25,15 @@ from app.model_profiles import DEFAULT_MODEL_PROFILE_ID, MODEL_PROFILES
 logger = logging.getLogger("worker-base.openpcdet")
 
 
+def _create_openpcdet_logger():
+    from pcdet.utils import common_utils
+
+    model_logger = logging.getLogger(common_utils.__name__)
+    if model_logger.handlers:
+        return model_logger
+    return common_utils.create_logger()
+
+
 class InferenceItem(BaseModel):
     frame_index: int
     pointcloud_path: str
@@ -190,7 +199,7 @@ def _load_points(
 class OpenPCDetEngine:
     def __init__(self) -> None:
         self._inference_count = 0
-        self._model_refresh_interval = max(1, int(os.getenv("MODEL_REFRESH_INTERVAL", "100")))
+        self._model_refresh_interval = max(0, int(os.getenv("MODEL_REFRESH_INTERVAL", "0")))
 
     def _resolve_profile(self, profile_id: str | None) -> dict:
         resolved_profile_id = profile_id or DEFAULT_MODEL_PROFILE_ID
@@ -221,11 +230,10 @@ class OpenPCDetEngine:
         from pcdet.config import cfg_from_yaml_file
         from pcdet.datasets import DatasetTemplate
         from pcdet.models import build_network
-        from pcdet.utils import common_utils
 
         cfg = copy.deepcopy(base_cfg)
         cfg_from_yaml_file(cfg_file, cfg)
-        logger = common_utils.create_logger()
+        model_logger = _create_openpcdet_logger()
 
         class ModelDataset(DatasetTemplate):
             def __len__(self):
@@ -239,11 +247,11 @@ class OpenPCDetEngine:
             class_names=cfg.CLASS_NAMES,
             training=False,
             root_path=None,
-            logger=logger,
+            logger=model_logger,
         )
         model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=dataset)
         use_cuda = torch.cuda.is_available()
-        model.load_params_from_file(filename=ckpt_file, logger=logger, to_cpu=not use_cuda)
+        model.load_params_from_file(filename=ckpt_file, logger=model_logger, to_cpu=not use_cuda)
         model.to(torch.device("cuda:0" if use_cuda else "cpu"))
         model.eval()
         return model, cfg, use_cuda
@@ -305,7 +313,11 @@ class OpenPCDetEngine:
                 )
             )
         self._inference_count += 1
-        refresh_due = use_cuda and self._inference_count % self._model_refresh_interval == 0
+        refresh_due = (
+            use_cuda
+            and self._model_refresh_interval > 0
+            and self._inference_count % self._model_refresh_interval == 0
+        )
         if use_cuda:
             if self._inference_count % 50 == 0:
                 allocated_mb = torch.cuda.memory_allocated() / (1024 * 1024)

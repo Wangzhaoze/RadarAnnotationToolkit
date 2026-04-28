@@ -201,6 +201,16 @@ class TrackingRequest(BaseModel):
     yaw_smoothing_alpha: float = Field(default=0.5, ge=0.0, le=1.0)
     task_name: str = "3D Tracking"
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_method(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        if payload.get("method") == "greedy_cv":
+            payload["method"] = "kalman_filter"
+        return payload
+
 
 class AutoLabelRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
@@ -282,6 +292,7 @@ class DatasetCapabilityReport(BaseModel):
     camera_available: bool = False
     radar_available: bool = False
     can_annotate_3d_box: bool = False
+    can_camera_3d_box: bool = False
     can_project_to_camera: bool = False
     missing_requirements: list[str] = Field(default_factory=list)
 

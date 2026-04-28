@@ -343,6 +343,7 @@ class ProjectManager:
             camera_available=camera_available,
             radar_available=radar_available,
             can_annotate_3d_box=lidar_available,
+            can_camera_3d_box=camera_available and has_camera_intrinsics and has_camera_transform,
             can_project_to_camera=lidar_available and camera_available and has_camera_intrinsics and has_camera_transform,
             missing_requirements=missing_requirements,
         )

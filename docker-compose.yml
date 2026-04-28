@@ -46,6 +46,7 @@ services:
     depends_on:
       - worker-base
     volumes:
+      - ./services/api/app:/workspace/services/api/app
       - ./services/datasets:/workspace/services/datasets
       - ./storage:/workspace/storage
       - C:/:/hostfs/c
@@ -65,10 +66,15 @@ services:
       WORKER_SOURCE_ROOT: /workspace/services/workers/base
       OPENPCDET_SOURCE_ROOT: /workspace/services/workers/base/openpcdet
       OPENPCDET_ASSETS_ROOT: /workspace/services/workers/base/openpcdet/assets
+      WILDDET3D_SOURCE_ROOT: /workspace/services/workers/base/WildDet3D
       YOLO_SOURCE_ROOT: /workspace/services/workers/base/yolo
       YOLO_ASSETS_ROOT: /workspace/services/workers/base/yolo/assets
       DATASET_PLUGIN_ROOT: /workspace/services/datasets
       DEFAULT_MODEL_PROFILE_ID: pv_rcnn_kitti
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      http_proxy: ${http_proxy:-}
+      https_proxy: ${https_proxy:-}
       NO_PROXY: localhost,127.0.0.1,::1,api,web,worker-base,host.docker.internal
       no_proxy: localhost,127.0.0.1,::1,api,web,worker-base,host.docker.internal
     gpus: all
@@ -81,6 +87,7 @@ services:
       - ./services/workers/base/tracking:/workspace/services/workers/base/tracking
       - ./services/workers/base/openpcdet/app/main.py:/workspace/services/workers/base/openpcdet/app/main.py
       - ./services/workers/base/openpcdet/app/model_profiles.py:/workspace/services/workers/base/openpcdet/app/model_profiles.py
+      - ./services/workers/base/WildDet3D:/workspace/services/workers/base/WildDet3D
       - ./services/workers/base/yolo:/workspace/services/workers/base/yolo
       - ./services/workers/base/openpcdet/pcdet/utils/spconv_utils.py:/workspace/services/workers/base/openpcdet/pcdet/utils/spconv_utils.py
       - ./services/workers/base/openpcdet/pcdet/models/backbones_2d/base_bev_backbone.py:/workspace/services/workers/base/openpcdet/pcdet/models/backbones_2d/base_bev_backbone.py

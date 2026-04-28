@@ -30,6 +30,8 @@ logger = logging.getLogger("radar-annotation-toolkit.jobs")
 
 YOLO_TASK_2D_DETECTION = "2D Object Detection"
 YOLO_TASK_2D_SEGMENTATION = "2D Semantic Segmentation"
+WILDDET3D_PROVIDER = "wilddet3d"
+WILDDET3D_TASK = "3d_camera_bbox"
 YOLO_CLASS_NAMES = ["Vehicle", "Pedestrian", "Bicycle", "truck", "bus"]
 YOLO_CLASS_COLORS = {
     "Vehicle": (245, 150, 100),
@@ -191,6 +193,24 @@ class JobManager:
             payload = response.json()
             profiles = list(payload.get("profiles") or [])
             provider_profiles = payload.get("provider_profiles") or {}
+            for profile in provider_profiles.get(WILDDET3D_PROVIDER, []):
+                profiles.append(
+                    {
+                        "id": profile.get("id"),
+                        "name": profile.get("name"),
+                        "architecture": profile.get("architecture") or "WildDet3D",
+                        "framework": profile.get("framework") or "WildDet3D",
+                        "weight_name": profile.get("weight_name") or Path(profile.get("ckpt_path", "")).name,
+                        "description": profile.get("description") or "",
+                        "cfg_file": None,
+                        "ckpt_path": profile.get("ckpt_path") or "",
+                        "class_names": profile.get("class_names") or [],
+                        "default_score_threshold": profile.get("default_score_threshold", 0.3),
+                        "is_available": bool(profile.get("is_available")),
+                        "provider": WILDDET3D_PROVIDER,
+                        "task": profile.get("task") or WILDDET3D_TASK,
+                    }
+                )
             for profile in provider_profiles.get("yolo", []):
                 profiles.append(
                     {
@@ -392,6 +412,9 @@ class JobManager:
         if request.task_name in {YOLO_TASK_2D_DETECTION, YOLO_TASK_2D_SEGMENTATION}:
             await self._process_yolo_job(job_id, request, pending_frames)
             return
+        if self._is_wilddet3d_request(request):
+            await self._process_wilddet3d_job(job_id, request, pending_frames)
+            return
 
         job = self.jobs[job_id]
         control = self.controls[job_id]
@@ -581,6 +604,103 @@ class JobManager:
         job.pause_requested = False
         job.cancel_requested = False
         job.message = f"{request.task_name} completed"
+        await self._broadcast(job)
+
+    async def _process_wilddet3d_job(self, job_id: str, request: AutoLabelRequest, pending_frames: list[int]) -> None:
+        job = self.jobs[job_id]
+        control = self.controls[job_id]
+        if await self._finish_if_cancelled(job, control):
+            return
+        if control.pause_requested:
+            job.status = "paused"
+            job.message = "Paused before inference started"
+        else:
+            job.status = "running"
+            job.current_frame = pending_frames[0] if pending_frames else None
+            job.message = f"Preparing {request.model_name} camera inference"
+        await self._broadcast(job)
+
+        sequence = self.dataset_registry.get(request.sequence_id)
+        intrinsics, lidar_to_camera = self._resolve_camera_3d_calibration(sequence.adapter)
+        score_threshold = request.score_threshold
+        async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=10.0)) as client:
+            try:
+                for frame_index in pending_frames:
+                    if await self._wait_if_paused(job, control):
+                        return
+                    if await self._finish_if_cancelled(job, control):
+                        return
+                    frame_summary = sequence.adapter.get_frame_summary(frame_index)
+                    image_path = self._resolve_camera_image_path(frame_summary, purpose="WildDet3D auto-labeling")
+                    job.status = "running"
+                    job.current_frame = frame_index
+                    warmup_note = " Worker/model warm-up can make the first frame slower." if job.processed_frames == 0 else ""
+                    job.message = (
+                        f"Running WildDet3D camera inference for frame {frame_index} "
+                        f"({job.processed_frames + 1}/{job.total_frames}).{warmup_note}"
+                    )
+                    await self._broadcast(job)
+                    response = await self._request_worker(
+                        client,
+                        "POST",
+                        "/infer/wilddet3d",
+                        job=job,
+                        json={
+                            "model_id": request.model_profile_id,
+                            "model_name": request.model_name,
+                            "score_threshold": score_threshold,
+                            "class_names": sequence.config.class_names,
+                            "items": [
+                                {
+                                    "frame_index": frame_index,
+                                    "image_path": image_path,
+                                    "intrinsics": intrinsics,
+                                    "lidar_to_camera": lidar_to_camera,
+                                }
+                            ],
+                        },
+                    )
+                    payload = response.json()
+                    annotations = [Box3D.model_validate(item) for item in payload["results"][0]["annotations"]]
+                    if score_threshold is not None:
+                        annotations = [annotation for annotation in annotations if annotation.score >= score_threshold]
+                    self.annotation_store.replace_annotations(
+                        request.sequence_id,
+                        frame_index,
+                        annotations,
+                        detection_completed=True,
+                    )
+                    job.processed_frames += 1
+                    job.progress = round(job.processed_frames / job.total_frames, 4)
+                    job.message = f"Processed frame {frame_index} ({job.processed_frames}/{job.total_frames})"
+                    await self._broadcast(job)
+                    if await self._finish_if_cancelled(job, control):
+                        return
+            except asyncio.CancelledError:
+                if job.status != "cancelled":
+                    job.status = "cancelled"
+                    job.message = "Auto-labeling stopped"
+                    job.current_frame = None
+                    job.pause_requested = False
+                    job.cancel_requested = False
+                    await self._broadcast(job)
+                return
+            except Exception as exc:
+                job.status = "failed"
+                job.error = self._format_error(exc)
+                job.current_frame = None
+                job.message = "WildDet3D auto-labeling failed"
+                await self._broadcast(job)
+                return
+            finally:
+                self.tasks.pop(job_id, None)
+
+        job.status = "completed"
+        job.progress = 1.0
+        job.current_frame = None
+        job.pause_requested = False
+        job.cancel_requested = False
+        job.message = "WildDet3D auto-labeling completed"
         await self._broadcast(job)
 
     async def _process_tracking_job(self, job_id: str, request: TrackingRequest) -> None:
@@ -1049,7 +1169,70 @@ class JobManager:
             return f"All {total_frames} frames already have detection annotations"
         return "Queued"
 
-    def _resolve_camera_image_path(self, frame_summary: dict) -> str:
+    def _is_wilddet3d_request(self, request: AutoLabelRequest) -> bool:
+        profile_id = str(request.model_profile_id or "").lower()
+        model_name = str(request.model_name or "").lower()
+        return profile_id.startswith("wilddet3d") or "wilddet3d" in model_name
+
+    def _calibration_matrix(
+        self,
+        value,
+        *,
+        rows: int,
+        cols: int,
+        name: str,
+    ) -> list[list[float]]:
+        if isinstance(value, dict):
+            if "K" in value:
+                value = value["K"]
+            elif "matrix" in value:
+                value = value["matrix"]
+        if not isinstance(value, list):
+            raise ValueError(f"{name} is missing")
+        if len(value) == rows and all(isinstance(row, list) and len(row) == cols for row in value):
+            matrix = value
+        elif len(value) == rows * cols:
+            matrix = [value[index * cols : (index + 1) * cols] for index in range(rows)]
+        else:
+            raise ValueError(f"{name} must be a {rows}x{cols} matrix")
+        try:
+            return [[float(entry) for entry in row] for row in matrix]
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} contains non-numeric values") from exc
+
+    def _resolve_camera_3d_calibration(self, adapter: DatasetAdapter) -> tuple[list[list[float]], list[list[float]]]:
+        calibration = adapter.get_metadata().calibration or {}
+        intrinsics_payload = calibration.get("camera_rgb_intrinsics")
+        intrinsics = self._calibration_matrix(
+            intrinsics_payload,
+            rows=3,
+            cols=3,
+            name="camera_rgb_intrinsics.K",
+        )
+        transform_payload = calibration.get("camera_rgb_lidar_to_camera")
+        if transform_payload is None:
+            for key, value in calibration.items():
+                if key == "camera_rgb_intrinsics":
+                    continue
+                try:
+                    transform_payload = self._calibration_matrix(
+                        value,
+                        rows=4,
+                        cols=4,
+                        name=key,
+                    )
+                    break
+                except ValueError:
+                    continue
+        lidar_to_camera = self._calibration_matrix(
+            transform_payload,
+            rows=4,
+            cols=4,
+            name="camera_rgb_lidar_to_camera",
+        )
+        return intrinsics, lidar_to_camera
+
+    def _resolve_camera_image_path(self, frame_summary: dict, purpose: str = "YOLO auto-labeling") -> str:
         camera_matches = frame_summary.get("camera") or {}
         ordered_names = ["rgb", *[name for name in camera_matches if name != "rgb"]]
         for name in ordered_names:
@@ -1057,7 +1240,7 @@ class JobManager:
             path = sensor_match_get(match, "path") if match is not None else None
             if sensor_match_get(match, "available") and path:
                 return str(path)
-        raise ValueError("Camera frame not available for YOLO auto-labeling")
+        raise ValueError(f"Camera frame not available for {purpose}")
 
     def _normalize_yolo_class(self, class_name: str) -> str | None:
         return YOLO_CLASS_ALIASES.get(str(class_name or "").strip().lower())

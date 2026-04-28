@@ -139,6 +139,7 @@ function buildCapabilityReport(timeline, frameDetail) {
   const calibration = frameDetail?.calibration || {};
   const hasIntrinsics = Boolean(calibration.camera_rgb_intrinsics);
   const canProjectToCamera = lidarAvailable && cameraAvailable && hasIntrinsics && hasCameraTransform(calibration);
+  const canCamera3dBox = cameraAvailable && hasIntrinsics && hasCameraTransform(calibration);
   const missingRequirements = [];
   if (!lidarAvailable) {
     missingRequirements.push("LiDAR data is missing, so 3D box annotation and auto-label are unavailable.");
@@ -160,6 +161,7 @@ function buildCapabilityReport(timeline, frameDetail) {
     camera_available: cameraAvailable,
     radar_available: radarAvailable,
     can_annotate_3d_box: lidarAvailable,
+    can_camera_3d_box: canCamera3dBox,
     can_project_to_camera: canProjectToCamera,
     missing_requirements: missingRequirements
   };

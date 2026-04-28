@@ -22,6 +22,41 @@ RORAD_CLASS_NAMES = ["Car", "Pedestrian", "Cyclist"]
 RORAD_DEFAULT_SCENE_ID = "ped_1"
 RORAD_ROOT = Path(os.environ.get("RORAD_DATASET_ROOT", "/workspace-data/rorad"))
 RORAD_RAMAP_EXTENSIONS = {".bmp", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
+RORAD_CAMERA_INTRINSICS = np.asarray(
+    [
+        [1152.0, 0.0, 1152.0],
+        [0.0, 1152.0, 648.0],
+        [0.0, 0.0, 1.0],
+    ],
+    dtype=np.float32,
+)
+RORAD_CAMERA_PROJECTION = np.asarray(
+    [
+        [1152.0, 0.0, 1152.0, 0.0],
+        [0.0, 1152.0, 648.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ],
+    dtype=np.float32,
+)
+RORAD_LIDAR_ORIGIN_IN_CAMERA_FLU = np.asarray([0.1, 0.05, 0.17], dtype=np.float32)
+RORAD_CAMERA_FLU_TO_IMAGE_CAMERA = np.asarray(
+    [
+        [0.0, -1.0, 0.0],
+        [0.0, 0.0, -1.0],
+        [1.0, 0.0, 0.0],
+    ],
+    dtype=np.float32,
+)
+
+
+def _build_rorad_lidar_to_camera_projection_transform() -> np.ndarray:
+    transform = np.eye(4, dtype=np.float32)
+    transform[:3, :3] = RORAD_CAMERA_FLU_TO_IMAGE_CAMERA
+    transform[:3, 3] = RORAD_CAMERA_FLU_TO_IMAGE_CAMERA @ RORAD_LIDAR_ORIGIN_IN_CAMERA_FLU
+    return transform
+
+
+RORAD_LIDAR_TO_CAMERA_PROJECTION = _build_rorad_lidar_to_camera_projection_transform()
 
 DATASET_DEFINITION = {
     "id": "rorad",
@@ -127,6 +162,19 @@ class RoRadAdapter(DatasetAdapter):
             "dataset_root": str(self.dataset_root),
             "ramap_root": str(self.dataset_root / "ramaps"),
             "radar_preview_source": "ramaps image files",
+            "camera_rgb_intrinsics": {
+                "width": 2304,
+                "height": 1296,
+                "K": RORAD_CAMERA_INTRINSICS.reshape(-1).tolist(),
+                "P": RORAD_CAMERA_PROJECTION.reshape(-1).tolist(),
+                "coordinate_frame": "image_camera_right_down_forward",
+            },
+            "camera_rgb_projection_matrix": RORAD_CAMERA_PROJECTION.tolist(),
+            "camera_rgb_lidar_to_camera": RORAD_LIDAR_TO_CAMERA_PROJECTION.tolist(),
+            "camera_rgb_lidar_to_camera_source_frame": "camera_flu_forward_left_up",
+            "camera_rgb_lidar_origin_in_camera_flu": RORAD_LIDAR_ORIGIN_IN_CAMERA_FLU.tolist(),
+            "camera_rgb_frame_id": "rgb",
+            "lidar_frame_id": "lidar",
         }
 
         if not self.timeline:

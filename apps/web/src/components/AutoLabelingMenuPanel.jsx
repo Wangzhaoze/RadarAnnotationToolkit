@@ -128,7 +128,16 @@ export default function AutoLabelingMenuPanel({
   expandedSectionId,
   onToggleSection
 }) {
-  const canAnnotateBoxes = hasWorkspace && (capabilityReport?.can_annotate_3d_box ?? true);
+  const selected3dProvider = selectedModelProfile?.provider || "openpcdet";
+  const selected3dTask = selectedModelProfile?.task || "";
+  const isCameraOnly3dModel = selected3dProvider === "wilddet3d" || selected3dTask === "3d_camera_bbox";
+  const canRun3dDetection = hasWorkspace && (
+    isCameraOnly3dModel
+      ? Boolean(capabilityReport?.can_camera_3d_box)
+      : (capabilityReport?.can_annotate_3d_box ?? true)
+  );
+  const canChoose3dModel = hasWorkspace && Boolean(modelProfiles.length);
+  const canTrack3d = hasWorkspace && (capabilityReport?.can_annotate_3d_box ?? true);
   const canAnnotate2d = hasWorkspace && Boolean(capabilityReport?.camera_available);
   const autoLabelJob = jobStatus?.task_name === "3D Bounding Box" ? jobStatus : null;
   const box2dJob = jobStatus?.task_name === "2D Object Detection" ? jobStatus : null;
@@ -232,7 +241,7 @@ export default function AutoLabelingMenuPanel({
             className="model-select"
             value={selectedModelProfileId}
             onChange={(event) => onSelectModelProfile(event.target.value)}
-            disabled={!modelProfiles.length || !canAnnotateBoxes}
+            disabled={!canChoose3dModel}
           >
             {modelProfiles.length ? (
               modelProfiles.map((profile) => (
@@ -245,10 +254,11 @@ export default function AutoLabelingMenuPanel({
             )}
           </select>
         </label>
-        <NumberField label="Start" helpKey="frameStart" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotateBoxes} />
-        <NumberField label="End" helpKey="frameEnd" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotateBoxes} />
+        <NumberField label="Start" helpKey="frameStart" value={startFrame} step={1} onChange={setStartFrame} disabled={!canRun3dDetection} />
+        <NumberField label="End" helpKey="frameEnd" value={endFrame} step={1} onChange={setEndFrame} disabled={!canRun3dDetection} />
         {!hasWorkspace ? <p className="panel-hint">Auto-labeling is unavailable until a dataset is loaded into the workspace.</p> : null}
-        {hasWorkspace && !canAnnotateBoxes ? <p className="panel-hint">3D detection is unavailable until the dataset provides LiDAR frames.</p> : null}
+        {hasWorkspace && !canRun3dDetection && isCameraOnly3dModel ? <p className="panel-hint">WildDet3D requires camera frames, camera intrinsics, and a LiDAR/Camera transform.</p> : null}
+        {hasWorkspace && !canRun3dDetection && !isCameraOnly3dModel ? <p className="panel-hint">This 3D detector is unavailable until the dataset provides LiDAR frames.</p> : null}
         <p className="panel-hint">Tracking unlocks only after this whole frame range has been processed by frame-wise detection, including frames with zero boxes.</p>
         {autoLabelLaunchState ? (
           <div className="job-box">
@@ -309,7 +319,7 @@ export default function AutoLabelingMenuPanel({
           <button
             className="primary-button"
             onClick={onRunAutoLabel}
-            disabled={!selectedModelProfile || hasActiveJob || !canAnnotateBoxes}
+            disabled={!selectedModelProfile || hasActiveJob || !canRun3dDetection}
           >
             Run
           </button>
@@ -342,25 +352,25 @@ export default function AutoLabelingMenuPanel({
           step={0.01}
           min={0}
           placeholder="Off"
-          disabled={!canAnnotateBoxes || hasActiveJob}
+          disabled={!canTrack3d || hasActiveJob}
           onChange={onTrackingInputScoreThresholdChange}
         />
-        <NumberField label="Max Missed" helpKey="trackingMaxMissed" value={trackingMaxMissedFrames} step={1} min={0} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingMaxMissedFramesChange} />
+        <NumberField label="Max Missed" helpKey="trackingMaxMissed" value={trackingMaxMissedFrames} step={1} min={0} disabled={!canTrack3d || hasActiveJob} onChange={onTrackingMaxMissedFramesChange} />
         <NumberField
           label="Assoc Gate"
           helpKey="trackingAssociationGate"
           value={trackingAssociationDistanceM}
           step={0.1}
           min={0}
-          disabled={!canAnnotateBoxes || hasActiveJob}
+          disabled={!canTrack3d || hasActiveJob}
           onChange={onTrackingAssociationDistanceMChange}
         />
-        <NumberField label="Process Pos" helpKey="trackingProcessPos" value={trackingProcessNoisePos} step={0.05} min={0.001} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingProcessNoisePosChange} />
-        <NumberField label="Process Size" helpKey="trackingProcessSize" value={trackingProcessNoiseSize} step={0.05} min={0.001} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingProcessNoiseSizeChange} />
-        <NumberField label="Process Vel" helpKey="trackingProcessVel" value={trackingProcessNoiseVel} step={0.05} min={0.001} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingProcessNoiseVelChange} />
-        <NumberField label="Measure Pos" helpKey="trackingMeasurePos" value={trackingMeasurementNoisePos} step={0.05} min={0.001} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingMeasurementNoisePosChange} />
-        <NumberField label="Measure Size" helpKey="trackingMeasureSize" value={trackingMeasurementNoiseSize} step={0.05} min={0.001} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingMeasurementNoiseSizeChange} />
-        <NumberField label="Yaw Smooth" helpKey="trackingYawSmooth" value={trackingYawSmoothingAlpha} step={0.05} min={0} max={1} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingYawSmoothingAlphaChange} />
+        <NumberField label="Process Pos" helpKey="trackingProcessPos" value={trackingProcessNoisePos} step={0.05} min={0.001} disabled={!canTrack3d || hasActiveJob} onChange={onTrackingProcessNoisePosChange} />
+        <NumberField label="Process Size" helpKey="trackingProcessSize" value={trackingProcessNoiseSize} step={0.05} min={0.001} disabled={!canTrack3d || hasActiveJob} onChange={onTrackingProcessNoiseSizeChange} />
+        <NumberField label="Process Vel" helpKey="trackingProcessVel" value={trackingProcessNoiseVel} step={0.05} min={0.001} disabled={!canTrack3d || hasActiveJob} onChange={onTrackingProcessNoiseVelChange} />
+        <NumberField label="Measure Pos" helpKey="trackingMeasurePos" value={trackingMeasurementNoisePos} step={0.05} min={0.001} disabled={!canTrack3d || hasActiveJob} onChange={onTrackingMeasurementNoisePosChange} />
+        <NumberField label="Measure Size" helpKey="trackingMeasureSize" value={trackingMeasurementNoiseSize} step={0.05} min={0.001} disabled={!canTrack3d || hasActiveJob} onChange={onTrackingMeasurementNoiseSizeChange} />
+        <NumberField label="Yaw Smooth" helpKey="trackingYawSmooth" value={trackingYawSmoothingAlpha} step={0.05} min={0} max={1} disabled={!canTrack3d || hasActiveJob} onChange={onTrackingYawSmoothingAlphaChange} />
         <p className="panel-hint">{trackingReadiness?.message || "Tracking is unavailable until frame-wise detection finishes for the selected range."}</p>
         <p className="panel-hint">Blank score leaves detections unfiltered; Kalman settings are applied to the whole selected frame range.</p>
         {!trackingReady && trackingReadiness?.next_missing_frame != null ? (
@@ -414,7 +424,7 @@ export default function AutoLabelingMenuPanel({
           </div>
         ) : null}
         <div className="section-action-row">
-          <button className="primary-button" onClick={onRunTracking} disabled={!trackingReady || hasActiveJob || !canAnnotateBoxes}>
+          <button className="primary-button" onClick={onRunTracking} disabled={!trackingReady || hasActiveJob || !canTrack3d}>
             Run
           </button>
         </div>
