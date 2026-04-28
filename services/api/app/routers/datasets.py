@@ -32,6 +32,7 @@ from app.utils import float_heatmap_to_png_bytes, radelft_radar_semantic_to_png_
 
 router = APIRouter(tags=["datasets"])
 logger = logging.getLogger("radar-annotation-toolkit.api.datasets")
+IMAGE_PREVIEW_EXTENSIONS = {".bmp", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
 
 
 @router.get("/datasets")
@@ -300,7 +301,11 @@ def get_radar_preview(sequence_id: str, frame_index: int, radar_name: str):
         path = adapter.get_radar_preview_path(frame_index, radar_name)
         if not path:
             raise HTTPException(status_code=404, detail="Radar frame not available")
-        return Response(content=float_heatmap_to_png_bytes(Path(path)), media_type="image/png")
+        path = Path(path)
+        if path.suffix.lower() in IMAGE_PREVIEW_EXTENSIONS:
+            media_type, _ = mimetypes.guess_type(str(path))
+            return FileResponse(path, media_type=media_type or "image/png")
+        return Response(content=float_heatmap_to_png_bytes(path), media_type="image/png")
     except (KeyError, IndexError, ValueError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

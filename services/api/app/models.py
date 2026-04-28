@@ -37,7 +37,7 @@ class Box3D(BaseModel):
     source_model: str = "manual"
     coord_frame: Literal["lidar"] = "lidar"
     track_id: str | None = None
-    source_stage: Literal["manual", "detected", "interpolated"] | None = None
+    source_stage: Literal["manual", "detected", "interpolated", "predicted"] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -189,12 +189,16 @@ class TrackingRequest(BaseModel):
     sequence_id: str
     start_frame: int
     end_frame: int
-    method: Literal["greedy_cv"] = "greedy_cv"
+    method: Literal["kalman_filter"] = "kalman_filter"
     input_score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
-    max_gap_frames: int = Field(default=2, ge=0)
-    max_track_lost_frames: int = Field(default=2, ge=0)
-    match_distance_xy: float | None = Field(default=None, gt=0.0)
-    match_z_delta: float | None = Field(default=None, gt=0.0)
+    max_missed_frames: int = Field(default=3, ge=0)
+    association_distance_m: float = Field(default=4.0, gt=0.0)
+    process_noise_pos: float = Field(default=0.5, gt=0.0)
+    process_noise_size: float = Field(default=0.1, gt=0.0)
+    process_noise_vel: float = Field(default=1.0, gt=0.0)
+    measurement_noise_pos: float = Field(default=1.0, gt=0.0)
+    measurement_noise_size: float = Field(default=0.5, gt=0.0)
+    yaw_smoothing_alpha: float = Field(default=0.5, ge=0.0, le=1.0)
     task_name: str = "3D Tracking"
 
 

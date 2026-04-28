@@ -1,5 +1,6 @@
 import NumberField from "./NumberField";
 import OptionalNumberField from "./OptionalNumberField";
+import ParameterLabel from "./ParameterLabel";
 import SidebarSection from "./SidebarSection";
 
 const TRACKING_STAGE_LABELS = {
@@ -98,18 +99,24 @@ export default function AutoLabelingMenuPanel({
   onRun2dObjectDetection,
   onRun2dSemanticSegmentation,
   onRunTracking,
-  trackingMethod,
-  onTrackingMethodChange,
   trackingInputScoreThreshold,
   onTrackingInputScoreThresholdChange,
-  trackingMaxGapFrames,
-  onTrackingMaxGapFramesChange,
-  trackingMaxTrackLostFrames,
-  onTrackingMaxTrackLostFramesChange,
-  trackingMatchDistanceXY,
-  onTrackingMatchDistanceXYChange,
-  trackingMatchZDelta,
-  onTrackingMatchZDeltaChange,
+  trackingMaxMissedFrames,
+  onTrackingMaxMissedFramesChange,
+  trackingAssociationDistanceM,
+  onTrackingAssociationDistanceMChange,
+  trackingProcessNoisePos,
+  onTrackingProcessNoisePosChange,
+  trackingProcessNoiseSize,
+  onTrackingProcessNoiseSizeChange,
+  trackingProcessNoiseVel,
+  onTrackingProcessNoiseVelChange,
+  trackingMeasurementNoisePos,
+  onTrackingMeasurementNoisePosChange,
+  trackingMeasurementNoiseSize,
+  onTrackingMeasurementNoiseSizeChange,
+  trackingYawSmoothingAlpha,
+  onTrackingYawSmoothingAlphaChange,
   onPauseAutoLabel,
   onResumeAutoLabel,
   onCancelAutoLabel,
@@ -220,7 +227,7 @@ export default function AutoLabelingMenuPanel({
           <strong>{scoreThreshold.toFixed(2)}</strong>
         </div>
         <label className="field-row">
-          <span>Weight</span>
+          <ParameterLabel helpKey="modelWeight3d">Weight</ParameterLabel>
           <select
             className="model-select"
             value={selectedModelProfileId}
@@ -238,8 +245,8 @@ export default function AutoLabelingMenuPanel({
             )}
           </select>
         </label>
-        <NumberField label="Start" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotateBoxes} />
-        <NumberField label="End" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotateBoxes} />
+        <NumberField label="Start" helpKey="frameStart" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotateBoxes} />
+        <NumberField label="End" helpKey="frameEnd" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotateBoxes} />
         {!hasWorkspace ? <p className="panel-hint">Auto-labeling is unavailable until a dataset is loaded into the workspace.</p> : null}
         {hasWorkspace && !canAnnotateBoxes ? <p className="panel-hint">3D detection is unavailable until the dataset provides LiDAR frames.</p> : null}
         <p className="panel-hint">Tracking unlocks only after this whole frame range has been processed by frame-wise detection, including frames with zero boxes.</p>
@@ -325,15 +332,12 @@ export default function AutoLabelingMenuPanel({
           <strong>{trackingReady ? "Unlocked" : "Locked"}</strong>
           <div>Stage</div>
           <strong>{trackingStageLabel || "-"}</strong>
+          <div>Method</div>
+          <strong>Kalman Filter</strong>
         </div>
-        <label className="field-row">
-          <span>Method</span>
-          <select className="model-select" value={trackingMethod} onChange={(event) => onTrackingMethodChange(event.target.value)} disabled={!canAnnotateBoxes || hasActiveJob}>
-            <option value="greedy_cv">Greedy CV</option>
-          </select>
-        </label>
         <OptionalNumberField
           label="Score Gate"
+          helpKey="trackingScoreGate"
           value={trackingInputScoreThreshold}
           step={0.01}
           min={0}
@@ -341,28 +345,24 @@ export default function AutoLabelingMenuPanel({
           disabled={!canAnnotateBoxes || hasActiveJob}
           onChange={onTrackingInputScoreThresholdChange}
         />
-        <NumberField label="Max Gap" value={trackingMaxGapFrames} step={1} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingMaxGapFramesChange} />
-        <NumberField label="Lost Frames" value={trackingMaxTrackLostFrames} step={1} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingMaxTrackLostFramesChange} />
-        <OptionalNumberField
-          label="Match XY"
-          value={trackingMatchDistanceXY}
+        <NumberField label="Max Missed" helpKey="trackingMaxMissed" value={trackingMaxMissedFrames} step={1} min={0} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingMaxMissedFramesChange} />
+        <NumberField
+          label="Assoc Gate"
+          helpKey="trackingAssociationGate"
+          value={trackingAssociationDistanceM}
           step={0.1}
           min={0}
-          placeholder="Per class"
           disabled={!canAnnotateBoxes || hasActiveJob}
-          onChange={onTrackingMatchDistanceXYChange}
+          onChange={onTrackingAssociationDistanceMChange}
         />
-        <OptionalNumberField
-          label="Match Z"
-          value={trackingMatchZDelta}
-          step={0.1}
-          min={0}
-          placeholder="Per class"
-          disabled={!canAnnotateBoxes || hasActiveJob}
-          onChange={onTrackingMatchZDeltaChange}
-        />
+        <NumberField label="Process Pos" helpKey="trackingProcessPos" value={trackingProcessNoisePos} step={0.05} min={0.001} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingProcessNoisePosChange} />
+        <NumberField label="Process Size" helpKey="trackingProcessSize" value={trackingProcessNoiseSize} step={0.05} min={0.001} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingProcessNoiseSizeChange} />
+        <NumberField label="Process Vel" helpKey="trackingProcessVel" value={trackingProcessNoiseVel} step={0.05} min={0.001} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingProcessNoiseVelChange} />
+        <NumberField label="Measure Pos" helpKey="trackingMeasurePos" value={trackingMeasurementNoisePos} step={0.05} min={0.001} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingMeasurementNoisePosChange} />
+        <NumberField label="Measure Size" helpKey="trackingMeasureSize" value={trackingMeasurementNoiseSize} step={0.05} min={0.001} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingMeasurementNoiseSizeChange} />
+        <NumberField label="Yaw Smooth" helpKey="trackingYawSmooth" value={trackingYawSmoothingAlpha} step={0.05} min={0} max={1} disabled={!canAnnotateBoxes || hasActiveJob} onChange={onTrackingYawSmoothingAlphaChange} />
         <p className="panel-hint">{trackingReadiness?.message || "Tracking is unavailable until frame-wise detection finishes for the selected range."}</p>
-        <p className="panel-hint">Blank score or match thresholds fall back to no filtering or the built-in per-class gates.</p>
+        <p className="panel-hint">Blank score leaves detections unfiltered; Kalman settings are applied to the whole selected frame range.</p>
         {!trackingReady && trackingReadiness?.next_missing_frame != null ? (
           <p className="panel-hint">Finish detection for frame {trackingReadiness.next_missing_frame} and the remaining missing frames in this range first.</p>
         ) : null}
@@ -436,7 +436,7 @@ export default function AutoLabelingMenuPanel({
           <strong>2D boxes</strong>
         </div>
         <label className="field-row">
-          <span>Weight</span>
+          <ParameterLabel helpKey="modelWeight2d">Weight</ParameterLabel>
           <select
             className="model-select"
             value={selected2dDetectionModelProfileId}
@@ -454,8 +454,8 @@ export default function AutoLabelingMenuPanel({
             )}
           </select>
         </label>
-        <NumberField label="Start" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotate2d || hasActiveJob} />
-        <NumberField label="End" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotate2d || hasActiveJob} />
+        <NumberField label="Start" helpKey="frameStart" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotate2d || hasActiveJob} />
+        <NumberField label="End" helpKey="frameEnd" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotate2d || hasActiveJob} />
         {!hasWorkspace ? <p className="panel-hint">2D detection is unavailable until a dataset is loaded into the workspace.</p> : null}
         {hasWorkspace && !canAnnotate2d ? <p className="panel-hint">2D detection requires camera frames.</p> : null}
         <CompactJobBox
@@ -488,7 +488,7 @@ export default function AutoLabelingMenuPanel({
           <strong>Camera semantic mask</strong>
         </div>
         <label className="field-row">
-          <span>Weight</span>
+          <ParameterLabel helpKey="modelWeight2d">Weight</ParameterLabel>
           <select
             className="model-select"
             value={selected2dSegmentationModelProfileId}
@@ -506,8 +506,8 @@ export default function AutoLabelingMenuPanel({
             )}
           </select>
         </label>
-        <NumberField label="Start" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotate2d || hasActiveJob} />
-        <NumberField label="End" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotate2d || hasActiveJob} />
+        <NumberField label="Start" helpKey="frameStart" value={startFrame} step={1} onChange={setStartFrame} disabled={!canAnnotate2d || hasActiveJob} />
+        <NumberField label="End" helpKey="frameEnd" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotate2d || hasActiveJob} />
         <p className="panel-hint">Successful runs write a camera semantic layer that can be shown from Show / Layers / Camera Semantic.</p>
         <CompactJobBox
           launchState={segmentationLaunchState}

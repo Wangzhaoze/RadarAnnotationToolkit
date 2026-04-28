@@ -16,17 +16,12 @@ from uuid import uuid4
 
 import numpy as np
 from pydantic import BaseModel, Field, model_validator
+from scipy.optimize import linear_sum_assignment
 
 
-TRACKING_CLASS_CONFIG = {
-    "vehicle": {"max_distance_xy": 4.5, "max_z_delta": 2.0},
-    "pedestrian": {"max_distance_xy": 1.6, "max_z_delta": 1.6},
-    "bicycle": {"max_distance_xy": 2.2, "max_z_delta": 1.8},
-}
-DEFAULT_TRACKING_CONFIG = {"max_distance_xy": 3.0, "max_z_delta": 1.8}
-
-TrackingMethod = Literal["greedy_cv"]
+TrackingMethod = Literal["kalman_filter"]
 TrackingProgressCallback = Callable[[int, int, int], None]
+TrackingSourceStage = Literal["manual", "detected", "interpolated", "predicted"]
 
 
 class TrackingCancelled(RuntimeError):
@@ -49,7 +44,7 @@ class TrackingBox3D(BaseModel):
     source_model: str = "manual"
     coord_frame: Literal["lidar"] = "lidar"
     track_id: str | None = None
-    source_stage: Literal["manual", "detected", "interpolated"] | None = None
+    source_stage: TrackingSourceStage | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -65,18 +60,23 @@ class TrackingBox3D(BaseModel):
 
 
 class TrackingConfig(BaseModel):
-    method: TrackingMethod = "greedy_cv"
+    method: TrackingMethod = "kalman_filter"
     input_score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
-    max_gap_frames: int = Field(default=2, ge=0)
-    max_track_lost_frames: int = Field(default=2, ge=0)
-    match_distance_xy: float | None = Field(default=None, gt=0.0)
-    match_z_delta: float | None = Field(default=None, gt=0.0)
+    max_missed_frames: int = Field(default=3, ge=0)
+    association_distance_m: float = Field(default=4.0, gt=0.0)
+    process_noise_pos: float = Field(default=0.5, gt=0.0)
+    process_noise_size: float = Field(default=0.1, gt=0.0)
+    process_noise_vel: float = Field(default=1.0, gt=0.0)
+    measurement_noise_pos: float = Field(default=1.0, gt=0.0)
+    measurement_noise_size: float = Field(default=0.5, gt=0.0)
+    yaw_smoothing_alpha: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class TrackingFrameInput(BaseModel):
     frame_index: int
     timestamp: float
     annotations: list[TrackingBox3D]
+    ego_pose: list[list[float]] | None = None
 
 
 class TrackingJobCreateRequest(BaseModel):
@@ -105,21 +105,104 @@ class TrackingJobResultResponse(BaseModel):
 
 
 @dataclass
-class TrackObservation:
-    frame_index: int
-    timestamp: float
+class KalmanBoxFilter:
+    x: np.ndarray
+    p: np.ndarray
+
+    @classmethod
+    def from_observation(cls, observation: np.ndarray) -> KalmanBoxFilter:
+        x = np.zeros(9, dtype=np.float64)
+        x[:6] = observation
+        p = np.eye(9, dtype=np.float64)
+        p[:6, :6] *= 1.0
+        p[6:, 6:] *= 10.0
+        return cls(x=x, p=p)
+
+    def predict(self, dt: float, config: TrackingConfig) -> None:
+        dt = max(float(dt), 0.0)
+        transition = np.eye(9, dtype=np.float64)
+        transition[0, 6] = dt
+        transition[1, 7] = dt
+        transition[2, 8] = dt
+
+        scale = max(dt, 1e-3)
+        process_noise = np.diag(
+            [
+                config.process_noise_pos * scale,
+                config.process_noise_pos * scale,
+                config.process_noise_pos * scale,
+                config.process_noise_size * scale,
+                config.process_noise_size * scale,
+                config.process_noise_size * scale,
+                config.process_noise_vel * scale,
+                config.process_noise_vel * scale,
+                config.process_noise_vel * scale,
+            ]
+        ) ** 2
+
+        self.x = transition @ self.x
+        self.p = transition @ self.p @ transition.T + process_noise
+        self.x[3:6] = np.maximum(self.x[3:6], 0.01)
+
+    def update(self, observation: np.ndarray, config: TrackingConfig) -> None:
+        observation_matrix = np.zeros((6, 9), dtype=np.float64)
+        observation_matrix[:6, :6] = np.eye(6, dtype=np.float64)
+        measurement_noise = np.diag(
+            [
+                config.measurement_noise_pos,
+                config.measurement_noise_pos,
+                config.measurement_noise_pos,
+                config.measurement_noise_size,
+                config.measurement_noise_size,
+                config.measurement_noise_size,
+            ]
+        ) ** 2
+
+        innovation = observation - observation_matrix @ self.x
+        residual_covariance = observation_matrix @ self.p @ observation_matrix.T + measurement_noise
+        kalman_gain = self.p @ observation_matrix.T @ np.linalg.inv(residual_covariance)
+        self.x = self.x + kalman_gain @ innovation
+        identity = np.eye(9, dtype=np.float64)
+        self.p = (identity - kalman_gain @ observation_matrix) @ self.p
+        self.x[3:6] = np.maximum(self.x[3:6], 0.01)
+
+    def box_state(self) -> np.ndarray:
+        return self.x[:6].copy()
+
+
+@dataclass
+class TrackingMeasurement:
     annotation: TrackingBox3D
+    center: np.ndarray
+    size: np.ndarray
+    yaw: float
+
+    @property
+    def observation(self) -> np.ndarray:
+        return np.concatenate([self.center, self.size]).astype(np.float64, copy=False)
 
 
 @dataclass
 class TrackState:
     track_id: str
     class_name: str
-    last_annotation: TrackingBox3D
-    last_frame_index: int
+    filter: KalmanBoxFilter
+    yaw: float
     last_timestamp: float
-    velocity_xy: np.ndarray = field(default_factory=lambda: np.zeros(2, dtype=np.float32))
-    observations: list[TrackObservation] = field(default_factory=list)
+    state_timestamp: float
+    last_annotation: TrackingBox3D
+    missed_frames: int = 0
+
+
+@dataclass
+class TrackingCoordinateContext:
+    use_world_frame: bool
+    poses_by_frame: dict[int, np.ndarray]
+
+    def pose_for_frame(self, frame_index: int) -> np.ndarray | None:
+        if not self.use_world_frame:
+            return None
+        return self.poses_by_frame.get(frame_index)
 
 
 @dataclass
@@ -187,16 +270,16 @@ class TrackingService:
         progress_callback: TrackingProgressCallback | None = None,
         cancel_event: threading.Event | None = None,
     ) -> dict[int, list[TrackingBox3D]]:
-        if config.method == "greedy_cv":
-            return self._track_greedy_cv(
-                frames,
-                config,
-                progress_callback=progress_callback,
-                cancel_event=cancel_event,
-            )
-        raise ValueError(f"Unsupported tracking method: {config.method}")
+        if config.method != "kalman_filter":
+            raise ValueError(f"Unsupported tracking method: {config.method}")
+        return self._track_kalman(
+            frames,
+            config,
+            progress_callback=progress_callback,
+            cancel_event=cancel_event,
+        )
 
-    def _track_greedy_cv(
+    def _track_kalman(
         self,
         frames: list[TrackingFrameInput],
         config: TrackingConfig,
@@ -204,228 +287,272 @@ class TrackingService:
         progress_callback: TrackingProgressCallback | None = None,
         cancel_event: threading.Event | None = None,
     ) -> dict[int, list[TrackingBox3D]]:
-        frame_results = {frame.frame_index: [] for frame in frames}
+        sorted_frames = sorted(frames, key=lambda item: (item.frame_index, item.timestamp))
+        frame_results = {frame.frame_index: [] for frame in sorted_frames}
+        coordinate_context = self._build_coordinate_context(sorted_frames)
         active_tracks: dict[str, list[TrackState]] = {}
-        all_tracks: list[TrackState] = []
         next_track_number = 1
-        total_frames = len(frames)
+        total_frames = len(sorted_frames)
 
-        for completed_frames, frame in enumerate(frames, start=1):
+        for completed_frames, frame in enumerate(sorted_frames, start=1):
             self._ensure_not_cancelled(cancel_event)
-            for class_name, detections in self._group_detections(frame.annotations, config).items():
+            frame_pose = coordinate_context.pose_for_frame(frame.frame_index)
+
+            for class_tracks in active_tracks.values():
+                for track in class_tracks:
+                    self._predict_track_to_frame(track, frame.timestamp, config)
+
+            grouped = self._group_measurements(frame, config, coordinate_context)
+            matched_track_ids: set[str] = set()
+            matched_detection_ids: set[str] = set()
+
+            for class_name, measurements in grouped.items():
                 class_tracks = active_tracks.setdefault(class_name, [])
                 class_tracks[:] = [
                     track
                     for track in class_tracks
-                    if frame.frame_index - track.last_frame_index <= config.max_track_lost_frames + 1
+                    if track.missed_frames <= config.max_missed_frames
                 ]
-                matched_detection_indexes = self._associate_tracks(
-                    class_tracks=class_tracks,
-                    detections=detections,
-                    frame_index=frame.frame_index,
-                    timestamp=frame.timestamp,
-                    config=config,
-                )
-                for detection_index, detection in enumerate(detections):
-                    if detection_index in matched_detection_indexes:
+                matches = self._associate_tracks(class_tracks, measurements, config)
+                for track_index, detection_index in matches:
+                    track = class_tracks[track_index]
+                    measurement = measurements[detection_index]
+                    self._update_track(track, measurement, frame.timestamp, config)
+                    frame_results[frame.frame_index].append(
+                        self._annotation_from_track(
+                            track=track,
+                            frame_index=frame.frame_index,
+                            pose=frame_pose,
+                            source_annotation=measurement.annotation,
+                            source_stage="detected",
+                        )
+                    )
+                    matched_track_ids.add(track.track_id)
+                    matched_detection_ids.add(measurement.annotation.id)
+
+                for measurement in measurements:
+                    if measurement.annotation.id in matched_detection_ids:
                         continue
                     track = self._create_track(
                         track_number=next_track_number,
-                        class_name=class_name,
-                        frame_index=frame.frame_index,
+                        measurement=measurement,
                         timestamp=frame.timestamp,
-                        detection=detection,
                     )
                     next_track_number += 1
                     class_tracks.append(track)
-                    all_tracks.append(track)
+                    frame_results[frame.frame_index].append(
+                        self._annotation_from_track(
+                            track=track,
+                            frame_index=frame.frame_index,
+                            pose=frame_pose,
+                            source_annotation=measurement.annotation,
+                            source_stage="detected",
+                        )
+                    )
+                    matched_track_ids.add(track.track_id)
 
-            for class_name, class_tracks in active_tracks.items():
-                active_tracks[class_name] = [
-                    track
-                    for track in class_tracks
-                    if frame.frame_index - track.last_frame_index <= config.max_track_lost_frames + 1
-                ]
+            for class_name, class_tracks in list(active_tracks.items()):
+                next_tracks: list[TrackState] = []
+                for track in class_tracks:
+                    if track.track_id in matched_track_ids:
+                        next_tracks.append(track)
+                        continue
+                    track.missed_frames += 1
+                    if track.missed_frames <= config.max_missed_frames:
+                        frame_results[frame.frame_index].append(
+                            self._annotation_from_track(
+                                track=track,
+                                frame_index=frame.frame_index,
+                                pose=frame_pose,
+                                source_annotation=track.last_annotation,
+                                source_stage="predicted",
+                            )
+                        )
+                        next_tracks.append(track)
+                active_tracks[class_name] = next_tracks
+
             if progress_callback is not None:
                 progress_callback(completed_frames, total_frames, frame.frame_index)
 
-        self._ensure_not_cancelled(cancel_event)
-        for track in all_tracks:
-            observations = sorted(track.observations, key=lambda item: item.frame_index)
-            for observation in observations:
-                frame_results[observation.frame_index].append(
-                    observation.annotation.model_copy(
-                        update={
-                            "track_id": track.track_id,
-                            "source_stage": "manual" if observation.annotation.source_model == "manual" else "detected",
-                        }
-                    )
-                )
-            for previous, current in zip(observations, observations[1:]):
-                gap = current.frame_index - previous.frame_index - 1
-                if gap <= 0 or gap > config.max_gap_frames:
-                    continue
-                for offset in range(1, gap + 1):
-                    self._ensure_not_cancelled(cancel_event)
-                    missing_frame = previous.frame_index + offset
-                    alpha = offset / (gap + 1)
-                    frame_results[missing_frame].append(
-                        self._interpolate_annotation(
-                            track_id=track.track_id,
-                            previous=previous.annotation,
-                            current=current.annotation,
-                            alpha=alpha,
-                            frame_index=missing_frame,
-                        )
-                    )
-
         return frame_results
 
-    def _group_detections(self, annotations: list[TrackingBox3D], config: TrackingConfig) -> dict[str, list[TrackingBox3D]]:
-        grouped: dict[str, list[TrackingBox3D]] = {}
-        for annotation in annotations:
-            if annotation.source_model == "manual" or annotation.source_stage == "interpolated":
+    def _build_coordinate_context(self, frames: list[TrackingFrameInput]) -> TrackingCoordinateContext:
+        poses_by_frame: dict[int, np.ndarray] = {}
+        for frame in frames:
+            pose = self._coerce_pose_matrix(frame.ego_pose)
+            if pose is None:
+                return TrackingCoordinateContext(use_world_frame=False, poses_by_frame={})
+            poses_by_frame[frame.frame_index] = pose
+        return TrackingCoordinateContext(use_world_frame=bool(frames), poses_by_frame=poses_by_frame)
+
+    def _group_measurements(
+        self,
+        frame: TrackingFrameInput,
+        config: TrackingConfig,
+        coordinate_context: TrackingCoordinateContext,
+    ) -> dict[str, list[TrackingMeasurement]]:
+        grouped: dict[str, list[TrackingMeasurement]] = {}
+        pose = coordinate_context.pose_for_frame(frame.frame_index)
+        for annotation in frame.annotations:
+            if annotation.source_model == "manual" or annotation.source_stage in {"interpolated", "predicted"}:
                 continue
             if config.input_score_threshold is not None and annotation.score < config.input_score_threshold:
                 continue
-            grouped.setdefault(annotation.class_name, []).append(annotation)
+            measurement = self._measurement_from_annotation(annotation, pose)
+            grouped.setdefault(annotation.class_name, []).append(measurement)
         return grouped
 
     def _associate_tracks(
         self,
-        *,
-        class_tracks: list[TrackState],
-        detections: list[TrackingBox3D],
-        frame_index: int,
-        timestamp: float,
+        tracks: list[TrackState],
+        measurements: list[TrackingMeasurement],
         config: TrackingConfig,
-    ) -> set[int]:
-        candidate_pairs: list[tuple[float, int, int]] = []
-        for track_index, track in enumerate(class_tracks):
-            predicted_xy = self._predict_xy(track, timestamp)
-            max_distance_xy = self._max_distance_xy(track.class_name, frame_index - track.last_frame_index, config)
-            max_z_delta = self._max_z_delta(track.class_name, config)
-            for detection_index, detection in enumerate(detections):
-                detection_xy = np.asarray([detection.center.x, detection.center.y], dtype=np.float32)
-                distance_xy = float(np.linalg.norm(predicted_xy - detection_xy))
-                z_delta = abs(track.last_annotation.center.z - detection.center.z)
-                if distance_xy > max_distance_xy or z_delta > max_z_delta:
-                    continue
-                size_delta = self._size_delta(track.last_annotation, detection)
-                cost = distance_xy + 0.35 * z_delta + 0.5 * size_delta
-                candidate_pairs.append((cost, track_index, detection_index))
+    ) -> list[tuple[int, int]]:
+        if not tracks or not measurements:
+            return []
 
-        matched_track_indexes: set[int] = set()
-        matched_detection_indexes: set[int] = set()
-        for _, track_index, detection_index in sorted(candidate_pairs, key=lambda item: item[0]):
-            if track_index in matched_track_indexes or detection_index in matched_detection_indexes:
+        costs = np.full((len(tracks), len(measurements)), np.inf, dtype=np.float64)
+        for track_index, track in enumerate(tracks):
+            predicted_center = track.filter.box_state()[:3]
+            predicted_size = track.filter.box_state()[3:6]
+            for detection_index, measurement in enumerate(measurements):
+                distance = float(np.linalg.norm(predicted_center - measurement.center))
+                if distance > config.association_distance_m:
+                    continue
+                size_delta = self._size_delta(predicted_size, measurement.size)
+                costs[track_index, detection_index] = distance + 0.25 * size_delta
+
+        if not np.isfinite(costs).any():
+            return []
+
+        safe_costs = np.where(np.isfinite(costs), costs, config.association_distance_m + 1e6)
+        row_indexes, column_indexes = linear_sum_assignment(safe_costs)
+        matches: list[tuple[int, int]] = []
+        for row_index, column_index in zip(row_indexes, column_indexes, strict=False):
+            if not np.isfinite(costs[row_index, column_index]):
                 continue
-            track = class_tracks[track_index]
-            detection = detections[detection_index]
-            self._update_track(
-                track=track,
-                frame_index=frame_index,
-                timestamp=timestamp,
-                detection=detection,
-            )
-            matched_track_indexes.add(track_index)
-            matched_detection_indexes.add(detection_index)
-        return matched_detection_indexes
+            matches.append((int(row_index), int(column_index)))
+        return matches
 
     def _create_track(
         self,
         *,
         track_number: int,
-        class_name: str,
-        frame_index: int,
+        measurement: TrackingMeasurement,
         timestamp: float,
-        detection: TrackingBox3D,
     ) -> TrackState:
-        track_id = f"trk-{track_number:05d}"
         return TrackState(
-            track_id=track_id,
-            class_name=class_name,
-            last_annotation=detection,
-            last_frame_index=frame_index,
+            track_id=f"trk-{track_number:05d}",
+            class_name=measurement.annotation.class_name,
+            filter=KalmanBoxFilter.from_observation(measurement.observation),
+            yaw=measurement.yaw,
             last_timestamp=timestamp,
-            observations=[TrackObservation(frame_index=frame_index, timestamp=timestamp, annotation=detection)],
+            state_timestamp=timestamp,
+            last_annotation=measurement.annotation,
+            missed_frames=0,
         )
 
+    def _predict_track_to_frame(self, track: TrackState, timestamp: float, config: TrackingConfig) -> None:
+        if track.state_timestamp == timestamp:
+            return
+        delta_t = max(float(timestamp) - float(track.state_timestamp), 0.0)
+        track.filter.predict(delta_t, config)
+        track.state_timestamp = timestamp
+
     def _update_track(
+        self,
+        track: TrackState,
+        measurement: TrackingMeasurement,
+        timestamp: float,
+        config: TrackingConfig,
+    ) -> None:
+        track.filter.update(measurement.observation, config)
+        track.yaw = self._smooth_angle(track.yaw, measurement.yaw, config.yaw_smoothing_alpha)
+        track.last_timestamp = timestamp
+        track.state_timestamp = timestamp
+        track.last_annotation = measurement.annotation
+        track.missed_frames = 0
+
+    def _measurement_from_annotation(self, annotation: TrackingBox3D, pose: np.ndarray | None) -> TrackingMeasurement:
+        center = np.asarray([annotation.center.x, annotation.center.y, annotation.center.z], dtype=np.float64)
+        size = np.asarray([annotation.size.x, annotation.size.y, annotation.size.z], dtype=np.float64)
+        yaw = float(annotation.yaw)
+        if pose is not None:
+            center = self._transform_point(pose, center)
+            yaw = self._transform_yaw(pose[:3, :3], yaw)
+        return TrackingMeasurement(
+            annotation=annotation,
+            center=center,
+            size=np.maximum(size, 0.01),
+            yaw=self._normalize_angle(yaw),
+        )
+
+    def _annotation_from_track(
         self,
         *,
         track: TrackState,
         frame_index: int,
-        timestamp: float,
-        detection: TrackingBox3D,
-    ) -> None:
-        previous_xy = np.asarray([track.last_annotation.center.x, track.last_annotation.center.y], dtype=np.float32)
-        current_xy = np.asarray([detection.center.x, detection.center.y], dtype=np.float32)
-        delta_t = max(timestamp - track.last_timestamp, 1e-3)
-        track.velocity_xy = (current_xy - previous_xy) / delta_t
-        track.last_annotation = detection
-        track.last_frame_index = frame_index
-        track.last_timestamp = timestamp
-        track.observations.append(TrackObservation(frame_index=frame_index, timestamp=timestamp, annotation=detection))
-
-    def _predict_xy(self, track: TrackState, timestamp: float) -> np.ndarray:
-        delta_t = max(timestamp - track.last_timestamp, 0.0)
-        current_xy = np.asarray([track.last_annotation.center.x, track.last_annotation.center.y], dtype=np.float32)
-        if delta_t <= 0:
-            return current_xy
-        return current_xy + track.velocity_xy * delta_t
-
-    def _max_distance_xy(self, class_name: str, frame_gap: int, config: TrackingConfig) -> float:
-        if config.match_distance_xy is not None:
-            return float(config.match_distance_xy) * max(1, frame_gap)
-        class_config = TRACKING_CLASS_CONFIG.get(class_name.lower(), DEFAULT_TRACKING_CONFIG)
-        return float(class_config["max_distance_xy"]) * max(1, frame_gap)
-
-    def _max_z_delta(self, class_name: str, config: TrackingConfig) -> float:
-        if config.match_z_delta is not None:
-            return float(config.match_z_delta)
-        class_config = TRACKING_CLASS_CONFIG.get(class_name.lower(), DEFAULT_TRACKING_CONFIG)
-        return float(class_config["max_z_delta"])
-
-    def _size_delta(self, previous: TrackingBox3D, current: TrackingBox3D) -> float:
-        previous_size = np.asarray([previous.size.x, previous.size.y, previous.size.z], dtype=np.float32)
-        current_size = np.asarray([current.size.x, current.size.y, current.size.z], dtype=np.float32)
-        baseline = np.maximum(previous_size, 1e-3)
-        return float(np.mean(np.abs(current_size - previous_size) / baseline))
-
-    def _interpolate_annotation(
-        self,
-        *,
-        track_id: str,
-        previous: TrackingBox3D,
-        current: TrackingBox3D,
-        alpha: float,
-        frame_index: int,
+        pose: np.ndarray | None,
+        source_annotation: TrackingBox3D,
+        source_stage: Literal["detected", "predicted"],
     ) -> TrackingBox3D:
-        previous_center = np.asarray([previous.center.x, previous.center.y, previous.center.z], dtype=np.float32)
-        current_center = np.asarray([current.center.x, current.center.y, current.center.z], dtype=np.float32)
-        previous_size = np.asarray([previous.size.x, previous.size.y, previous.size.z], dtype=np.float32)
-        current_size = np.asarray([current.size.x, current.size.y, current.size.z], dtype=np.float32)
-        center = previous_center + (current_center - previous_center) * alpha
-        size = previous_size + (current_size - previous_size) * alpha
-        yaw = self._interpolate_angle(previous.yaw, current.yaw, alpha)
+        state = track.filter.box_state()
+        center = state[:3]
+        size = np.maximum(state[3:6], 0.01)
+        yaw = track.yaw
+        if pose is not None:
+            inverse_pose = np.linalg.inv(pose)
+            center = self._transform_point(inverse_pose, center)
+            yaw = self._transform_yaw(inverse_pose[:3, :3], yaw)
 
-        return TrackingBox3D(
-            id=f"{track_id}-interp-{frame_index:06d}",
-            class_name=previous.class_name,
-            score=min(previous.score, current.score),
-            center=Vector3(x=float(center[0]), y=float(center[1]), z=float(center[2])),
-            size=Vector3(x=float(size[0]), y=float(size[1]), z=float(size[2])),
-            yaw=yaw,
-            source_model=previous.source_model,
-            coord_frame="lidar",
-            track_id=track_id,
-            source_stage="interpolated",
+        annotation_id = source_annotation.id
+        if source_stage == "predicted":
+            annotation_id = f"{track.track_id}-pred-{frame_index:06d}"
+
+        return source_annotation.model_copy(
+            update={
+                "id": annotation_id,
+                "center": Vector3(x=float(center[0]), y=float(center[1]), z=float(center[2])),
+                "size": Vector3(x=float(size[0]), y=float(size[1]), z=float(size[2])),
+                "yaw": float(self._normalize_angle(yaw)),
+                "coord_frame": "lidar",
+                "track_id": track.track_id,
+                "source_stage": source_stage,
+            }
         )
 
-    def _interpolate_angle(self, previous: float, current: float, alpha: float) -> float:
+    def _coerce_pose_matrix(self, ego_pose: list[list[float]] | None) -> np.ndarray | None:
+        if ego_pose is None:
+            return None
+        try:
+            matrix = np.asarray(ego_pose, dtype=np.float64)
+        except (TypeError, ValueError):
+            return None
+        if matrix.shape != (4, 4) or not np.isfinite(matrix).all():
+            return None
+        return matrix
+
+    def _transform_point(self, transform: np.ndarray, point: np.ndarray) -> np.ndarray:
+        homogeneous = np.ones(4, dtype=np.float64)
+        homogeneous[:3] = point
+        transformed = transform @ homogeneous
+        return transformed[:3]
+
+    def _transform_yaw(self, rotation: np.ndarray, yaw: float) -> float:
+        heading = np.asarray([math.cos(yaw), math.sin(yaw), 0.0], dtype=np.float64)
+        transformed = rotation @ heading
+        return math.atan2(float(transformed[1]), float(transformed[0]))
+
+    def _smooth_angle(self, previous: float, current: float, previous_weight: float) -> float:
         delta = math.atan2(math.sin(current - previous), math.cos(current - previous))
-        return previous + delta * alpha
+        return self._normalize_angle(previous + (1.0 - previous_weight) * delta)
+
+    def _normalize_angle(self, value: float) -> float:
+        return math.atan2(math.sin(value), math.cos(value))
+
+    def _size_delta(self, previous_size: np.ndarray, current_size: np.ndarray) -> float:
+        baseline = np.maximum(np.asarray(previous_size, dtype=np.float64), 1e-3)
+        return float(np.mean(np.abs(np.asarray(current_size, dtype=np.float64) - baseline) / baseline))
 
     def _ensure_not_cancelled(self, cancel_event: threading.Event | None) -> None:
         if cancel_event is not None and cancel_event.is_set():

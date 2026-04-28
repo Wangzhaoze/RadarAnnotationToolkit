@@ -1,3 +1,4 @@
+import ParameterLabel from "./ParameterLabel";
 import SidebarSection from "./SidebarSection";
 
 export default function FileMenuPanel({
@@ -39,7 +40,7 @@ export default function FileMenuPanel({
         onToggle={onToggleSection}
       >
         <label className="field-stack">
-          <span>Dataset</span>
+          <ParameterLabel helpKey="dataset">Dataset</ParameterLabel>
           <select
             className="model-select"
             value={selectedDatasetId || ""}
@@ -54,7 +55,7 @@ export default function FileMenuPanel({
           </select>
         </label>
         <label className="field-stack">
-          <span>Scene</span>
+          <ParameterLabel helpKey="scene">Scene</ParameterLabel>
           <select
             className="model-select"
             value={selectedSceneId || ""}

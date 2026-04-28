@@ -1,5 +1,6 @@
 import { getAnnotationColor, hexToRgba } from "../lib/annotationColors";
 import NumberField from "./NumberField";
+import ParameterLabel from "./ParameterLabel";
 import SidebarSection from "./SidebarSection";
 
 function LayerToggleRow({
@@ -195,7 +196,7 @@ export default function ShowMenuPanel({
         onToggle={onToggleSection}
       >
         <label className="field-row">
-          <span>Target</span>
+          <ParameterLabel helpKey="filterTarget">Target</ParameterLabel>
           <select
             className="model-select"
             value={filterTarget}
@@ -209,7 +210,7 @@ export default function ShowMenuPanel({
             ))}
           </select>
         </label>
-        <NumberField label="Score >=" value={scoreThreshold} step={0.01} onChange={onScoreThresholdChange} disabled={!hasWorkspace} />
+        <NumberField label="Score >=" helpKey="scoreFilter" value={scoreThreshold} step={0.01} onChange={onScoreThresholdChange} disabled={!hasWorkspace} />
         <p className="panel-hint">Filters apply to the selected annotation target. Segmentation filtering is reserved until pixel-level annotation editing is added.</p>
         {!hasWorkspace ? <p className="panel-hint">Open File, choose a dataset scene, and load it before showing frames.</p> : null}
 

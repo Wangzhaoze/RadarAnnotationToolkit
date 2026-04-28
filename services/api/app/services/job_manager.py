@@ -21,7 +21,7 @@ import httpx
 from fastapi import WebSocket
 from PIL import Image, ImageDraw
 
-from app.adapters.base import sensor_match_get
+from app.adapters.base import DatasetAdapter, sensor_match_get
 from app.models import AutoLabelModelCatalog, AutoLabelRequest, BBox2D, Box2DAnnotation, Box3D, JobStatus, TrackingReadinessResponse, TrackingRequest
 from app.services.annotation_store import AnnotationStore
 from app.services.dataset_registry import DatasetRegistry
@@ -607,22 +607,28 @@ class JobManager:
             tracking_config = {
                 "method": request.method,
                 "input_score_threshold": request.input_score_threshold,
-                "max_gap_frames": request.max_gap_frames,
-                "max_track_lost_frames": request.max_track_lost_frames,
-                "match_distance_xy": request.match_distance_xy,
-                "match_z_delta": request.match_z_delta,
+                "max_missed_frames": request.max_missed_frames,
+                "association_distance_m": request.association_distance_m,
+                "process_noise_pos": request.process_noise_pos,
+                "process_noise_size": request.process_noise_size,
+                "process_noise_vel": request.process_noise_vel,
+                "measurement_noise_pos": request.measurement_noise_pos,
+                "measurement_noise_size": request.measurement_noise_size,
+                "yaw_smoothing_alpha": request.yaw_smoothing_alpha,
             }
             frame_inputs: list[dict] = []
             for offset, frame_index in enumerate(range(request.start_frame, request.end_frame + 1), start=1):
                 if await self._finish_if_cancelled(job, control):
                     return
                 frame_summary = sequence.adapter.get_frame_summary(frame_index)
+                ego_pose = self._get_tracking_ego_pose(sequence.adapter, frame_index)
                 annotations = self.annotation_store.get_annotations(request.sequence_id, frame_index)
                 frame_inputs.append(
                     {
                         "frame_index": frame_index,
                         "timestamp": float(frame_summary["timestamp"]),
                         "annotations": [annotation.model_dump(mode="json") for annotation in annotations],
+                        "ego_pose": ego_pose,
                     }
                 )
                 job.processed_frames = offset
@@ -867,9 +873,17 @@ class JobManager:
         return round(completed_units / (total_frames * 3), 4)
 
     def _tracking_model_name(self, method: str) -> str:
-        if method == "greedy_cv":
-            return "Greedy CV Tracker"
+        if method == "kalman_filter":
+            return "Kalman Filter Tracker"
         return method
+
+    def _get_tracking_ego_pose(self, adapter: DatasetAdapter, frame_index: int) -> list[list[float]] | None:
+        if type(adapter).get_ego_pose is DatasetAdapter.get_ego_pose:
+            return None
+        try:
+            return adapter.get_ego_pose(frame_index)
+        except Exception:
+            return None
 
     def _merge_tracking_annotations(
         self,
@@ -881,16 +895,16 @@ class JobManager:
         tracked_detected = {
             annotation.id: annotation
             for annotation in tracked_annotations
-            if annotation.source_stage != "interpolated"
+            if annotation.source_stage not in {"interpolated", "predicted"}
         }
-        interpolated_annotations = [
+        generated_annotations = [
             annotation
             for annotation in tracked_annotations
-            if annotation.source_stage == "interpolated"
+            if annotation.source_stage in {"interpolated", "predicted"}
         ]
         next_detected: list[Box3D] = []
         for annotation in existing_annotations:
-            if annotation.source_model == "manual" or annotation.source_stage == "interpolated":
+            if annotation.source_model == "manual" or annotation.source_stage in {"interpolated", "predicted"}:
                 continue
             updated_annotation = tracked_detected.get(annotation.id)
             if updated_annotation is not None:
@@ -904,7 +918,7 @@ class JobManager:
                     }
                 )
             )
-        return manual_annotations + next_detected + interpolated_annotations
+        return manual_annotations + next_detected + generated_annotations
 
     def _stopping_message(self, job: JobStatus) -> str:
         return "Stopping tracking" if job.task_name == "3D Tracking" else "Stopping auto-labeling"

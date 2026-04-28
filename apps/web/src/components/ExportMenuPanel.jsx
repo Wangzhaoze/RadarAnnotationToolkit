@@ -1,4 +1,5 @@
 import NumberField from "./NumberField";
+import ParameterLabel from "./ParameterLabel";
 import SidebarSection from "./SidebarSection";
 
 export default function ExportMenuPanel({
@@ -30,17 +31,17 @@ export default function ExportMenuPanel({
           <strong>Not connected</strong>
         </div>
         <label className="field-stack">
-          <span>Format</span>
+          <ParameterLabel helpKey="exportFormat">Format</ParameterLabel>
           <select className="model-select" value="radar-annotation-toolkit-json" disabled>
             <option value="radar-annotation-toolkit-json">Radar Annotation Toolkit JSON</option>
             <option value="kitti">KITTI 3D</option>
             <option value="coco">COCO 2D</option>
           </select>
         </label>
-        <NumberField label="Start" value={startFrame} step={1} disabled onChange={() => {}} />
-        <NumberField label="End" value={endFrame} step={1} disabled onChange={() => {}} />
+        <NumberField label="Start" helpKey="frameStart" value={startFrame} step={1} disabled onChange={() => {}} />
+        <NumberField label="End" helpKey="frameEnd" value={endFrame} step={1} disabled onChange={() => {}} />
         <label className="field-stack">
-          <span>Destination</span>
+          <ParameterLabel helpKey="exportDestination">Destination</ParameterLabel>
           <input value="Select export folder in a future version" disabled readOnly />
         </label>
         <button disabled>Export</button>

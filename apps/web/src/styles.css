@@ -558,6 +558,10 @@ select {
   margin-top: 0.55rem;
 }
 
+.parameter-label {
+  cursor: help;
+}
+
 .field-stack {
   display: grid;
   gap: 0.4rem;

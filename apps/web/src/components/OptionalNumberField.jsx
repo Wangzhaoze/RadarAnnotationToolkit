@@ -1,3 +1,5 @@
+import ParameterLabel from "./ParameterLabel";
+
 export default function OptionalNumberField({
   label,
   value,
@@ -5,15 +7,19 @@ export default function OptionalNumberField({
   onChange,
   disabled = false,
   placeholder = "Auto",
-  min
+  min,
+  max,
+  help,
+  helpKey
 }) {
   return (
     <label className="field-row">
-      <span>{label}</span>
+      <ParameterLabel help={help} helpKey={helpKey}>{label}</ParameterLabel>
       <input
         type="number"
         step={step}
         min={min}
+        max={max}
         value={value ?? ""}
         placeholder={placeholder}
         disabled={disabled}

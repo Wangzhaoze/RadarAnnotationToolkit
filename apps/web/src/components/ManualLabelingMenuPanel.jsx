@@ -1,5 +1,6 @@
 import { getAnnotationColor, hexToRgba } from "../lib/annotationColors";
 import NumberField from "./NumberField";
+import ParameterLabel from "./ParameterLabel";
 import SidebarSection from "./SidebarSection";
 
 export default function ManualLabelingMenuPanel({
@@ -97,6 +98,7 @@ export default function ManualLabelingMenuPanel({
                 <span className="annotation-chip-meta">
                   {annotation.track_id ? `${annotation.track_id} | ` : ""}
                   {annotation.source_stage === "interpolated" ? "interp | " : ""}
+                  {annotation.source_stage === "predicted" ? "pred | " : ""}
                   {annotation.score.toFixed(2)}
                 </span>
               </button>
@@ -106,7 +108,7 @@ export default function ManualLabelingMenuPanel({
         {selectedAnnotation ? (
           <div className="editor-form">
             <label className="field-row">
-              <span>Class</span>
+              <ParameterLabel helpKey="annotationClass">Class</ParameterLabel>
               <select className="model-select" value={selectedAnnotation.class_name} onChange={(event) => onUpdateAnnotation(selectedAnnotation.id, { class_name: event.target.value })}>
                 {classOptions.map((option) => (
                   <option key={option} value={option}>
@@ -115,14 +117,14 @@ export default function ManualLabelingMenuPanel({
                 ))}
               </select>
             </label>
-            <NumberField label="Score" value={selectedAnnotation.score} step={0.01} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { score: value })} />
-            <NumberField label="Center X" value={selectedAnnotation.center.x} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { center: { ...selectedAnnotation.center, x: value } })} />
-            <NumberField label="Center Y" value={selectedAnnotation.center.y} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { center: { ...selectedAnnotation.center, y: value } })} />
-            <NumberField label="Center Z" value={selectedAnnotation.center.z} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { center: { ...selectedAnnotation.center, z: value } })} />
-            <NumberField label="Size X" value={selectedAnnotation.size.x} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { size: { ...selectedAnnotation.size, x: value } })} />
-            <NumberField label="Size Y" value={selectedAnnotation.size.y} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { size: { ...selectedAnnotation.size, y: value } })} />
-            <NumberField label="Size Z" value={selectedAnnotation.size.z} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { size: { ...selectedAnnotation.size, z: value } })} />
-            <NumberField label="Yaw" value={selectedAnnotation.yaw} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { yaw: value })} />
+            <NumberField label="Score" helpKey="annotationScore" value={selectedAnnotation.score} step={0.01} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { score: value })} />
+            <NumberField label="Center X" helpKey="centerX" value={selectedAnnotation.center.x} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { center: { ...selectedAnnotation.center, x: value } })} />
+            <NumberField label="Center Y" helpKey="centerY" value={selectedAnnotation.center.y} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { center: { ...selectedAnnotation.center, y: value } })} />
+            <NumberField label="Center Z" helpKey="centerZ" value={selectedAnnotation.center.z} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { center: { ...selectedAnnotation.center, z: value } })} />
+            <NumberField label="Size X" helpKey="sizeX" value={selectedAnnotation.size.x} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { size: { ...selectedAnnotation.size, x: value } })} />
+            <NumberField label="Size Y" helpKey="sizeY" value={selectedAnnotation.size.y} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { size: { ...selectedAnnotation.size, y: value } })} />
+            <NumberField label="Size Z" helpKey="sizeZ" value={selectedAnnotation.size.z} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { size: { ...selectedAnnotation.size, z: value } })} />
+            <NumberField label="Yaw" helpKey="yaw" value={selectedAnnotation.yaw} disabled={!canAnnotateBoxes} onChange={(value) => onUpdateAnnotation(selectedAnnotation.id, { yaw: value })} />
             <div className="field-row">
               <span>Track</span>
               <strong>{selectedAnnotation.track_id || "-"}</strong>

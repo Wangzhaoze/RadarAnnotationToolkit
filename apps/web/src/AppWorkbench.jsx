@@ -23,9 +23,15 @@ const DESKTOP_LAYOUT_MIN_WIDTH = 1100;
 const FIXED_VISUALIZATION_CLASS_NAMES = ["Vehicle", "Pedestrian", "Bicycle", "truck", "bus"];
 const WORKSPACE_BOOTSTRAP_ATTEMPTS = 8;
 const WORKSPACE_BOOTSTRAP_DELAY_MS = 500;
-const DEFAULT_TRACKING_METHOD = "greedy_cv";
-const DEFAULT_TRACKING_MAX_GAP_FRAMES = 2;
-const DEFAULT_TRACKING_MAX_TRACK_LOST_FRAMES = 2;
+const DEFAULT_TRACKING_METHOD = "kalman_filter";
+const DEFAULT_TRACKING_MAX_MISSED_FRAMES = 3;
+const DEFAULT_TRACKING_ASSOCIATION_DISTANCE_M = 4.0;
+const DEFAULT_TRACKING_PROCESS_NOISE_POS = 0.5;
+const DEFAULT_TRACKING_PROCESS_NOISE_SIZE = 0.1;
+const DEFAULT_TRACKING_PROCESS_NOISE_VEL = 1.0;
+const DEFAULT_TRACKING_MEASUREMENT_NOISE_POS = 1.0;
+const DEFAULT_TRACKING_MEASUREMENT_NOISE_SIZE = 0.5;
+const DEFAULT_TRACKING_YAW_SMOOTHING_ALPHA = 0.5;
 const DEFAULT_LAYER_MODES = {
   lidar: "intensity",
   camera: "intensity",
@@ -332,12 +338,15 @@ export default function AppWorkbench() {
   const [startFrame, setStartFrame] = useState(0);
   const [endFrame, setEndFrame] = useState(0);
   const [trackingReadiness, setTrackingReadiness] = useState(createTrackingReadinessFallback);
-  const [trackingMethod, setTrackingMethod] = useState(DEFAULT_TRACKING_METHOD);
   const [trackingInputScoreThreshold, setTrackingInputScoreThreshold] = useState(null);
-  const [trackingMaxGapFrames, setTrackingMaxGapFrames] = useState(DEFAULT_TRACKING_MAX_GAP_FRAMES);
-  const [trackingMaxTrackLostFrames, setTrackingMaxTrackLostFrames] = useState(DEFAULT_TRACKING_MAX_TRACK_LOST_FRAMES);
-  const [trackingMatchDistanceXY, setTrackingMatchDistanceXY] = useState(null);
-  const [trackingMatchZDelta, setTrackingMatchZDelta] = useState(null);
+  const [trackingMaxMissedFrames, setTrackingMaxMissedFrames] = useState(DEFAULT_TRACKING_MAX_MISSED_FRAMES);
+  const [trackingAssociationDistanceM, setTrackingAssociationDistanceM] = useState(DEFAULT_TRACKING_ASSOCIATION_DISTANCE_M);
+  const [trackingProcessNoisePos, setTrackingProcessNoisePos] = useState(DEFAULT_TRACKING_PROCESS_NOISE_POS);
+  const [trackingProcessNoiseSize, setTrackingProcessNoiseSize] = useState(DEFAULT_TRACKING_PROCESS_NOISE_SIZE);
+  const [trackingProcessNoiseVel, setTrackingProcessNoiseVel] = useState(DEFAULT_TRACKING_PROCESS_NOISE_VEL);
+  const [trackingMeasurementNoisePos, setTrackingMeasurementNoisePos] = useState(DEFAULT_TRACKING_MEASUREMENT_NOISE_POS);
+  const [trackingMeasurementNoiseSize, setTrackingMeasurementNoiseSize] = useState(DEFAULT_TRACKING_MEASUREMENT_NOISE_SIZE);
+  const [trackingYawSmoothingAlpha, setTrackingYawSmoothingAlpha] = useState(DEFAULT_TRACKING_YAW_SMOOTHING_ALPHA);
   const [modelProfiles, setModelProfiles] = useState(FALLBACK_MODEL_PROFILES);
   const [selectedModelProfileId, setSelectedModelProfileId] = useState(FALLBACK_MODEL_PROFILES[0].id);
   const [selected2dDetectionModelProfileId, setSelected2dDetectionModelProfileId] = useState("");
@@ -1408,15 +1417,19 @@ export default function AppWorkbench() {
           sequence_id: currentSequenceId,
           start_frame: startFrame,
           end_frame: endFrame,
-          method: trackingMethod,
+          method: DEFAULT_TRACKING_METHOD,
           input_score_threshold:
             trackingInputScoreThreshold == null
               ? null
               : Math.max(0, Math.min(1, trackingInputScoreThreshold)),
-          max_gap_frames: Math.max(0, Math.round(trackingMaxGapFrames)),
-          max_track_lost_frames: Math.max(0, Math.round(trackingMaxTrackLostFrames)),
-          match_distance_xy: trackingMatchDistanceXY == null ? null : Math.max(0.1, trackingMatchDistanceXY),
-          match_z_delta: trackingMatchZDelta == null ? null : Math.max(0.1, trackingMatchZDelta)
+          max_missed_frames: Math.max(0, Math.round(trackingMaxMissedFrames)),
+          association_distance_m: Math.max(0.1, trackingAssociationDistanceM),
+          process_noise_pos: Math.max(0.001, trackingProcessNoisePos),
+          process_noise_size: Math.max(0.001, trackingProcessNoiseSize),
+          process_noise_vel: Math.max(0.001, trackingProcessNoiseVel),
+          measurement_noise_pos: Math.max(0.001, trackingMeasurementNoisePos),
+          measurement_noise_size: Math.max(0.001, trackingMeasurementNoiseSize),
+          yaw_smoothing_alpha: Math.max(0, Math.min(1, trackingYawSmoothingAlpha))
         })
       });
       setJobLaunchState(null);
@@ -1612,18 +1625,24 @@ export default function AppWorkbench() {
             onRun2dObjectDetection={run2dObjectDetection}
             onRun2dSemanticSegmentation={run2dSemanticSegmentation}
             onRunTracking={runTracking}
-            trackingMethod={trackingMethod}
-            onTrackingMethodChange={setTrackingMethod}
             trackingInputScoreThreshold={trackingInputScoreThreshold}
             onTrackingInputScoreThresholdChange={setTrackingInputScoreThreshold}
-            trackingMaxGapFrames={trackingMaxGapFrames}
-            onTrackingMaxGapFramesChange={setTrackingMaxGapFrames}
-            trackingMaxTrackLostFrames={trackingMaxTrackLostFrames}
-            onTrackingMaxTrackLostFramesChange={setTrackingMaxTrackLostFrames}
-            trackingMatchDistanceXY={trackingMatchDistanceXY}
-            onTrackingMatchDistanceXYChange={setTrackingMatchDistanceXY}
-            trackingMatchZDelta={trackingMatchZDelta}
-            onTrackingMatchZDeltaChange={setTrackingMatchZDelta}
+            trackingMaxMissedFrames={trackingMaxMissedFrames}
+            onTrackingMaxMissedFramesChange={setTrackingMaxMissedFrames}
+            trackingAssociationDistanceM={trackingAssociationDistanceM}
+            onTrackingAssociationDistanceMChange={setTrackingAssociationDistanceM}
+            trackingProcessNoisePos={trackingProcessNoisePos}
+            onTrackingProcessNoisePosChange={setTrackingProcessNoisePos}
+            trackingProcessNoiseSize={trackingProcessNoiseSize}
+            onTrackingProcessNoiseSizeChange={setTrackingProcessNoiseSize}
+            trackingProcessNoiseVel={trackingProcessNoiseVel}
+            onTrackingProcessNoiseVelChange={setTrackingProcessNoiseVel}
+            trackingMeasurementNoisePos={trackingMeasurementNoisePos}
+            onTrackingMeasurementNoisePosChange={setTrackingMeasurementNoisePos}
+            trackingMeasurementNoiseSize={trackingMeasurementNoiseSize}
+            onTrackingMeasurementNoiseSizeChange={setTrackingMeasurementNoiseSize}
+            trackingYawSmoothingAlpha={trackingYawSmoothingAlpha}
+            onTrackingYawSmoothingAlphaChange={setTrackingYawSmoothingAlpha}
             onPauseAutoLabel={pauseAutoLabel}
             onResumeAutoLabel={resumeAutoLabel}
             onCancelAutoLabel={cancelAutoLabel}

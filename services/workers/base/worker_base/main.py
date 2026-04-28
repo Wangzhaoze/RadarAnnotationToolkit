@@ -40,10 +40,10 @@ def _merged_catalog():
         "yolo": [profile.model_dump(mode="json") for profile in yolo_catalog.profiles],
         "tracking": [
             {
-                "id": "greedy_cv",
-                "name": "Greedy Constant-Velocity Tracker",
+                "id": "kalman_filter",
+                "name": "Kalman Filter Tracker",
                 "framework": "worker-base",
-                "description": "Associates 3D detections by class with XY constant-velocity prediction and greedy matching.",
+                "description": "Associates same-class 3D detections with a Kalman filter, Hungarian matching, and short missed-frame prediction.",
                 "is_available": True,
             }
         ],

@@ -21,6 +21,7 @@ from app.models import DatasetConfig, DatasetSceneOption, SensorMatch
 RORAD_CLASS_NAMES = ["Car", "Pedestrian", "Cyclist"]
 RORAD_DEFAULT_SCENE_ID = "ped_1"
 RORAD_ROOT = Path(os.environ.get("RORAD_DATASET_ROOT", "/workspace-data/rorad"))
+RORAD_RAMAP_EXTENSIONS = {".bmp", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
 
 DATASET_DEFINITION = {
     "id": "rorad",
@@ -44,16 +45,32 @@ def _timestamp_from_stem(stem: str) -> float:
     return timestamp_ns / 1_000_000_000.0
 
 
+def _timestamp_from_stem_or_none(stem: str) -> float | None:
+    try:
+        return _timestamp_from_stem(stem)
+    except (TypeError, ValueError):
+        return None
+
+
+def _image_files(root: Path) -> list[Path]:
+    if not root.exists():
+        return []
+    return sorted(path for path in root.iterdir() if path.is_file() and path.suffix.lower() in RORAD_RAMAP_EXTENSIONS)
+
+
 def _probe_rorad_scene(scene_id: str) -> tuple[bool, str | None]:
     scene_root = _rorad_scene_root(scene_id)
     lidar_root = scene_root / "lidar"
     camera_root = scene_root / "camera"
+    ramap_root = scene_root / "ramaps"
     if not scene_root.exists():
         return False, f"{scene_id} is not mounted inside the API container"
     if next(lidar_root.glob("*.bin"), None) is None:
         return False, f"{scene_id} does not contain LiDAR .bin files"
     if next(camera_root.glob("*.png"), None) is None:
         return False, f"{scene_id} does not contain camera .png files"
+    if not _image_files(ramap_root):
+        return False, f"{scene_id} does not contain RAMap image files in ramaps"
     return True, None
 
 
@@ -94,12 +111,22 @@ class RoRadAdapter(DatasetAdapter):
         self.dataset_root = Path(config.dataset_root)
         self.lidar_files = sorted((self.dataset_root / "lidar").glob("*.bin"))
         self.camera_files = sorted((self.dataset_root / "camera").glob("*.png"))
+        self.radar_files = _image_files(self.dataset_root / "ramaps")
         self.camera_by_stem = {path.stem: path for path in self.camera_files}
+        self.camera_index_by_path = {path: index for index, path in enumerate(self.camera_files)}
+        self.radar_by_stem = {path.stem: path for path in self.radar_files}
+        self.radar_index_by_path = {path: index for index, path in enumerate(self.radar_files)}
+        self.radar_timestamp_pairs = [
+            (index, timestamp)
+            for index, path in enumerate(self.radar_files)
+            if (timestamp := _timestamp_from_stem_or_none(path.stem)) is not None
+        ]
         self.timeline = [self._build_summary(index, path) for index, path in enumerate(self.lidar_files)]
         self.fps = self._estimate_fps()
         self.calibration = {
             "dataset_root": str(self.dataset_root),
-            "note": "RoRad loader currently exposes LiDAR and camera only; radar ADC visualization is intentionally disabled.",
+            "ramap_root": str(self.dataset_root / "ramaps"),
+            "radar_preview_source": "ramaps image files",
         }
 
         if not self.timeline:
@@ -120,11 +147,39 @@ class RoRadAdapter(DatasetAdapter):
         camera_path = self.camera_by_stem.get(lidar_path.stem)
         return {
             "rgb": SensorMatch(
-                index=None,
+                index=self.camera_index_by_path.get(camera_path) if camera_path else None,
                 timestamp=timestamp if camera_path else None,
                 path=str(camera_path) if camera_path else None,
                 delta_ms=0.0 if camera_path else None,
                 available=camera_path is not None,
+            )
+        }
+
+    def _build_radar_match(self, lidar_path: Path, timestamp: float) -> dict[str, SensorMatch]:
+        radar_path = self.radar_by_stem.get(lidar_path.stem)
+        radar_index = self.radar_index_by_path.get(radar_path) if radar_path else None
+        radar_timestamp = timestamp if radar_path else None
+        delta_ms = 0.0 if radar_path else None
+
+        if radar_path is None and self.radar_timestamp_pairs:
+            best_index, best_timestamp = min(
+                self.radar_timestamp_pairs,
+                key=lambda item: abs(float(item[1]) - float(timestamp)),
+            )
+            best_delta_ms = abs(float(best_timestamp) - float(timestamp)) * 1000.0
+            if best_delta_ms <= self.config.radar_tolerance_ms:
+                radar_index = best_index
+                radar_path = self.radar_files[best_index]
+                radar_timestamp = best_timestamp
+                delta_ms = best_delta_ms
+
+        return {
+            "heatmap": SensorMatch(
+                index=radar_index,
+                timestamp=radar_timestamp,
+                path=str(radar_path) if radar_path else None,
+                delta_ms=delta_ms,
+                available=radar_path is not None,
             )
         }
 
@@ -135,7 +190,7 @@ class RoRadAdapter(DatasetAdapter):
             "timestamp": timestamp,
             "lidar_path": str(lidar_path),
             "camera": self._build_camera_match(lidar_path, timestamp),
-            "radar": {},
+            "radar": self._build_radar_match(lidar_path, timestamp),
         }
 
     def get_frame_summary(self, index: int) -> dict:
