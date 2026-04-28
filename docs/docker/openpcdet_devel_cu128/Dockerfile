@@ -17,6 +17,8 @@ ENV OPENPCDET_ASSETS_ROOT=/workspace/services/workers/base/openpcdet/assets
 ENV YOLO_SOURCE_ROOT=/workspace/services/workers/base/yolo
 ENV YOLO_ASSETS_ROOT=/workspace/services/workers/base/yolo/assets
 ENV DATASET_PLUGIN_ROOT=/workspace/services/datasets
+ENV PYTHON_VERSION=3.11.15
+ENV PYTHON_HOME=/opt/python/3.11.15
 ENV VIRTUAL_ENV=/opt/venv
 ENV XDG_RUNTIME_DIR=/tmp/runtime-root
 ENV PATH=/opt/venv/bin:$PATH
@@ -26,29 +28,49 @@ WORKDIR /workspace/services/workers/base/openpcdet
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     git \
     g++ \
+    libbz2-dev \
+    libffi-dev \
     libglib2.0-0 \
     libgl1 \
+    liblzma-dev \
+    libncursesw5-dev \
+    libreadline-dev \
     libsm6 \
+    libsqlite3-dev \
+    libssl-dev \
     libxext6 \
     libxrender1 \
-    python3-venv \
-    python3 \
-    python3-dev \
-    python3-pip \
-    python3-setuptools \
-    python3-wheel \
+    tk-dev \
+    wget \
+    xz-utils \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /tmp/runtime-root /workspace/services/workers/base/openpcdet/assets
 COPY services/workers/base /workspace/services/workers/base
 COPY services/datasets /workspace/services/datasets
 
-RUN python3 -m venv /opt/venv \
+RUN wget -O /tmp/Python-${PYTHON_VERSION}.tgz https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz \
+    && tar -xzf /tmp/Python-${PYTHON_VERSION}.tgz -C /tmp \
+    && cd /tmp/Python-${PYTHON_VERSION} \
+    && ./configure --prefix=${PYTHON_HOME} --enable-shared --with-ensurepip=install \
+    && make -j"$(nproc)" \
+    && make install \
+    && echo "${PYTHON_HOME}/lib" > /etc/ld.so.conf.d/python-${PYTHON_VERSION}.conf \
+    && ldconfig \
+    && rm -rf /tmp/Python-${PYTHON_VERSION} /tmp/Python-${PYTHON_VERSION}.tgz
+
+RUN ${PYTHON_HOME}/bin/python3.11 -m venv /opt/venv \
     && /opt/venv/bin/python -m ensurepip --upgrade \
     && /opt/venv/bin/python -m pip install --upgrade pip setuptools wheel
-RUN /opt/venv/bin/python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+RUN /opt/venv/bin/python -m pip install \
+    torch==2.11.0 \
+    torchvision==0.26.0 \
+    torchaudio==2.11.0 \
+    --index-url https://download.pytorch.org/whl/cu128
 
 RUN /opt/venv/bin/python -m pip install spconv-cu126
 
@@ -56,6 +78,42 @@ RUN /opt/venv/bin/python -m pip install -r requirements.txt
 RUN /opt/venv/bin/python -m pip install ultralytics
 
 RUN /opt/venv/bin/python setup.py develop
+
+RUN /opt/venv/bin/python -m pip install vis4d==1.0.0
+
+RUN /opt/venv/bin/python -m pip install git+https://github.com/SysCV/vis4d_cuda_ops.git --no-build-isolation --no-cache-dir
+
+RUN /opt/venv/bin/python -m pip install --no-cache-dir \
+    numpy \
+    Pillow \
+    triton \
+    \
+    einops \
+    timm \
+    transformers \
+    huggingface_hub \
+    \
+    ftfy==6.1.1 \
+    regex \
+    "iopath>=0.1.10" \
+    typing_extensions \
+    "setuptools<80" \
+    \
+    opencv-python \
+    matplotlib \
+    \
+    pycocotools \
+    pyquaternion \
+    scipy \
+    terminaltables \
+    ml_collections \
+    tqdm \
+    \
+    pyarrow \
+    \
+    utils3d@git+https://github.com/EasternJournalist/utils3d.git
+
+RUN /opt/venv/bin/python -m pip install "pydantic>=2.7,<3" fastapi==0.115.0
 
 EXPOSE 8010
 
