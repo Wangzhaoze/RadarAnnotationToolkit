@@ -1,6 +1,6 @@
 # Radar Annotation Toolkit
 
-![Radar Annotation Toolkit UI](docs/images/current_status.png)
+![Radar Annotation Toolkit UI](docs/images/Screenshot_2026-04-28_155513.png)
 
 **Author:** Zhaoze Wang
 
