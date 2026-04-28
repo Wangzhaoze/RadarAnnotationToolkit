@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import NumberField from "./NumberField";
 import OptionalNumberField from "./OptionalNumberField";
 import ParameterLabel from "./ParameterLabel";
@@ -20,6 +21,28 @@ function clampProgressPercent(value) {
 function formatProgressPercent(value, precise = false) {
   const clamped = clampProgressPercent(value);
   return precise ? `${clamped.toFixed(1)}%` : `${Math.round(clamped)}%`;
+}
+
+function uniqueValues(values) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function profileNetworkLabel(profile) {
+  return profile?.network_label || profile?.architecture || profile?.name || "";
+}
+
+function profileConfigLabel(profile) {
+  return profile?.config_label || profile?.cfg_file?.split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, "") || "default";
+}
+
+function frameworkSortKey(framework) {
+  if (framework === "OpenPCDet") {
+    return "0";
+  }
+  if (framework === "WildDet3D") {
+    return "1";
+  }
+  return `2-${framework}`;
 }
 
 function CompactJobBox({ launchState, job, active, canCancel, onCancel }) {
@@ -129,15 +152,130 @@ export default function AutoLabelingMenuPanel({
   expandedSectionId,
   onToggleSection
 }) {
-  const selected3dProvider = selectedModelProfile?.provider || "openpcdet";
+  const [selected3dFramework, setSelected3dFramework] = useState("");
+  const [selected3dNetwork, setSelected3dNetwork] = useState("");
+  const [selected3dConfig, setSelected3dConfig] = useState("");
+
+  const frameworkOptions = useMemo(
+    () =>
+      uniqueValues(modelProfiles.map((profile) => profile.framework || profile.provider)).sort((a, b) =>
+        frameworkSortKey(a).localeCompare(frameworkSortKey(b))
+      ),
+    [modelProfiles]
+  );
+  const frameworkProfiles = useMemo(
+    () => modelProfiles.filter((profile) => selected3dFramework && (profile.framework || profile.provider) === selected3dFramework),
+    [modelProfiles, selected3dFramework]
+  );
+  const networkOptions = useMemo(
+    () => uniqueValues(frameworkProfiles.map(profileNetworkLabel)),
+    [frameworkProfiles]
+  );
+  const networkProfiles = useMemo(
+    () => frameworkProfiles.filter((profile) => profileNetworkLabel(profile) === selected3dNetwork),
+    [frameworkProfiles, selected3dNetwork]
+  );
+  const configOptions = useMemo(
+    () => uniqueValues(networkProfiles.map(profileConfigLabel)),
+    [networkProfiles]
+  );
+
+  useEffect(() => {
+    if (!selectedModelProfile) {
+      return;
+    }
+    setSelected3dFramework(selectedModelProfile.framework || selectedModelProfile.provider || "");
+    setSelected3dNetwork(profileNetworkLabel(selectedModelProfile));
+    setSelected3dConfig(profileConfigLabel(selectedModelProfile));
+  }, [selectedModelProfile]);
+
+  useEffect(() => {
+    if (!selected3dFramework) {
+      setSelected3dNetwork("");
+      setSelected3dConfig("");
+      return;
+    }
+    if (!frameworkOptions.includes(selected3dFramework)) {
+      setSelected3dFramework("");
+      setSelected3dNetwork("");
+      setSelected3dConfig("");
+      onSelectModelProfile("");
+    }
+  }, [frameworkOptions, onSelectModelProfile, selected3dFramework]);
+
+  function resolve3dProfile(framework, network, config) {
+    return (
+      modelProfiles.find(
+        (profile) =>
+          (profile.framework || profile.provider) === framework &&
+          profileNetworkLabel(profile) === network &&
+          profileConfigLabel(profile) === config
+      ) || null
+    );
+  }
+
+  function handleFrameworkChange(value) {
+    setSelected3dFramework(value);
+    setSelected3dNetwork("");
+    setSelected3dConfig("");
+    onSelectModelProfile("");
+    if (!value) {
+      return;
+    }
+    const nextFrameworkProfiles = modelProfiles.filter((profile) => (profile.framework || profile.provider) === value);
+    const nextNetworkOptions = uniqueValues(nextFrameworkProfiles.map(profileNetworkLabel));
+    if (nextNetworkOptions.length !== 1) {
+      return;
+    }
+    const nextNetwork = nextNetworkOptions[0];
+    const nextNetworkProfiles = nextFrameworkProfiles.filter((profile) => profileNetworkLabel(profile) === nextNetwork);
+    const nextConfigOptions = uniqueValues(nextNetworkProfiles.map(profileConfigLabel));
+    setSelected3dNetwork(nextNetwork);
+    if (nextConfigOptions.length === 1) {
+      const nextConfig = nextConfigOptions[0];
+      setSelected3dConfig(nextConfig);
+      onSelectModelProfile(resolve3dProfile(value, nextNetwork, nextConfig)?.id || "");
+    }
+  }
+
+  function handleNetworkChange(value) {
+    setSelected3dNetwork(value);
+    setSelected3dConfig("");
+    onSelectModelProfile("");
+    if (!selected3dFramework || !value) {
+      return;
+    }
+    const nextNetworkProfiles = modelProfiles.filter(
+      (profile) =>
+        (profile.framework || profile.provider) === selected3dFramework &&
+        profileNetworkLabel(profile) === value
+    );
+    const nextConfigOptions = uniqueValues(nextNetworkProfiles.map(profileConfigLabel));
+    if (nextConfigOptions.length === 1) {
+      const nextConfig = nextConfigOptions[0];
+      setSelected3dConfig(nextConfig);
+      onSelectModelProfile(resolve3dProfile(selected3dFramework, value, nextConfig)?.id || "");
+    }
+  }
+
+  function handleConfigChange(value) {
+    setSelected3dConfig(value);
+    if (!selected3dFramework || !selected3dNetwork || !value) {
+      onSelectModelProfile("");
+      return;
+    }
+    onSelectModelProfile(resolve3dProfile(selected3dFramework, selected3dNetwork, value)?.id || "");
+  }
+
+  const selected3dProvider = selectedModelProfile?.provider || (selected3dFramework === "WildDet3D" ? "wilddet3d" : "openpcdet");
   const selected3dTask = selectedModelProfile?.task || "";
-  const isCameraOnly3dModel = selected3dProvider === "wilddet3d" || selected3dTask === "3d_camera_bbox";
+  const isCameraOnly3dModel = selected3dFramework === "WildDet3D" || selected3dProvider === "wilddet3d" || selected3dTask === "3d_camera_bbox";
   const canRun3dDetection = hasWorkspace && (
     isCameraOnly3dModel
       ? Boolean(capabilityReport?.can_camera_3d_box)
       : (capabilityReport?.can_annotate_3d_box ?? true)
   );
-  const canChoose3dModel = hasWorkspace && Boolean(modelProfiles.length);
+  const canChoose3dModel = hasWorkspace && Boolean(modelProfiles.length) && !hasActiveJob;
   const canTrack3d = hasWorkspace && (capabilityReport?.can_annotate_3d_box ?? true);
   const canAnnotate2d = hasWorkspace && Boolean(capabilityReport?.camera_available);
   const autoLabelJob = jobStatus?.task_name === "3D Bounding Box" ? jobStatus : null;
@@ -196,7 +334,11 @@ export default function AutoLabelingMenuPanel({
       ? "Preparing..."
       : autoLabelJob
         ? `${autoLabelJob.status} - ${displayJobPercentLabel}`
-        : `${selectedModelProfile?.name || "No model"} - ${startFrame}-${endFrame}`;
+        : selectedModelProfile
+          ? `${selectedModelProfile.name} - ${startFrame}-${endFrame}`
+          : selected3dFramework
+            ? `${selected3dFramework} - choose config`
+            : "Choose framework";
   const trackingSummary = !hasWorkspace
     ? "Load a dataset first"
     : trackingLaunchState
@@ -236,30 +378,61 @@ export default function AutoLabelingMenuPanel({
         expanded={expandedSectionId === "auto-labeling-3d-detection"}
         onToggle={onToggleSection}
       >
-        <div className="meta-grid">
-          <div>Framework</div>
-          <strong>{selectedModelProfile?.framework || "-"}</strong>
-          <div>Network</div>
-          <strong>{selectedModelProfile?.architecture || "-"}</strong>
-          <div>Score Min</div>
-          <strong>{scoreThreshold.toFixed(2)}</strong>
-        </div>
         <label className="field-row">
-          <ParameterLabel helpKey="modelWeight3d">Weight</ParameterLabel>
+          <ParameterLabel helpKey="modelWeight3d">Framework</ParameterLabel>
           <select
             className="model-select"
-            value={selectedModelProfileId}
-            onChange={(event) => onSelectModelProfile(event.target.value)}
+            value={selected3dFramework}
+            onChange={(event) => handleFrameworkChange(event.target.value)}
             disabled={!canChoose3dModel}
           >
-            {modelProfiles.length ? (
-              modelProfiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name} / {profile.weight_name}
-                </option>
-              ))
+            <option value="">--</option>
+            {frameworkOptions.map((framework) => (
+              <option key={framework} value={framework}>
+                {framework}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field-row">
+          <ParameterLabel helpKey="modelWeight3d">Network</ParameterLabel>
+          <select
+            className="model-select"
+            value={selected3dNetwork}
+            onChange={(event) => handleNetworkChange(event.target.value)}
+            disabled={!canChoose3dModel || !selected3dFramework || !networkOptions.length}
+          >
+            <option value="">--</option>
+            {networkOptions.map((network) => (
+              <option key={network} value={network}>
+                {network}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field-row">
+          <ParameterLabel helpKey="modelWeight3d">Config</ParameterLabel>
+          <select
+            className="model-select"
+            value={selected3dConfig}
+            onChange={(event) => handleConfigChange(event.target.value)}
+            disabled={!canChoose3dModel || !selected3dFramework || !selected3dNetwork || !configOptions.length}
+          >
+            <option value="">--</option>
+            {configOptions.map((config) => (
+              <option key={config} value={config}>
+                {config}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field-row">
+          <ParameterLabel helpKey="modelWeight3d">Weight</ParameterLabel>
+          <select className="model-select" value={selectedModelProfileId} disabled>
+            {selectedModelProfile ? (
+              <option value={selectedModelProfile.id}>{selectedModelProfile.weight_name}</option>
             ) : (
-              <option value="">No models available</option>
+              <option value="">--</option>
             )}
           </select>
         </label>

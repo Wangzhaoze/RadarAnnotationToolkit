@@ -242,6 +242,10 @@ class AutoLabelModelProfile(BaseModel):
     is_available: bool
     provider: str = "openpcdet"
     task: str | None = None
+    dataset_id: str | None = None
+    training_dataset: str | None = None
+    network_label: str | None = None
+    config_label: str | None = None
 
 
 class AutoLabelModelCatalog(BaseModel):

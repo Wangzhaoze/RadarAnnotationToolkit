@@ -349,9 +349,9 @@ export default function AppWorkbench() {
   const [trackingMeasurementNoisePos, setTrackingMeasurementNoisePos] = useState(DEFAULT_TRACKING_MEASUREMENT_NOISE_POS);
   const [trackingMeasurementNoiseSize, setTrackingMeasurementNoiseSize] = useState(DEFAULT_TRACKING_MEASUREMENT_NOISE_SIZE);
   const [trackingYawSmoothingAlpha, setTrackingYawSmoothingAlpha] = useState(DEFAULT_TRACKING_YAW_SMOOTHING_ALPHA);
-  const [modelProfiles, setModelProfiles] = useState(FALLBACK_MODEL_PROFILES);
+  const [modelProfiles, setModelProfiles] = useState([]);
   const [modelCatalogStatus, setModelCatalogStatus] = useState("idle");
-  const [selectedModelProfileId, setSelectedModelProfileId] = useState(FALLBACK_MODEL_PROFILES[0].id);
+  const [selectedModelProfileId, setSelectedModelProfileId] = useState("");
   const [selected2dDetectionModelProfileId, setSelected2dDetectionModelProfileId] = useState("");
   const [selected2dSegmentationModelProfileId, setSelected2dSegmentationModelProfileId] = useState("");
   const [scoreThreshold, setScoreThreshold] = useState(FALLBACK_MODEL_PROFILES[0].default_score_threshold);
@@ -376,6 +376,7 @@ export default function AppWorkbench() {
   const jobLaunchLockRef = useRef(false);
   const modelCatalogRequestRef = useRef(null);
   const modelCatalogTimerRef = useRef(null);
+  const modelCatalogSequenceRef = useRef(null);
   const jobSocketRef = useRef(null);
   const previousJobRef = useRef(null);
   const layerModeTouchedRef = useRef({ lidar: false, camera: false, radar: false });
@@ -450,7 +451,7 @@ export default function AppWorkbench() {
   );
   const selectedAnnotation =
     visibleAnnotations.find((annotation) => annotation.id === selectedAnnotationId) || null;
-  const openpcdetModelProfiles = useMemo(
+  const threeDModelProfiles = useMemo(
     () => modelProfiles.filter((profile) => profile.provider !== "yolo"),
     [modelProfiles]
   );
@@ -463,7 +464,7 @@ export default function AppWorkbench() {
     [modelProfiles]
   );
   const selectedModelProfile =
-    openpcdetModelProfiles.find((profile) => profile.id === selectedModelProfileId) || openpcdetModelProfiles[0] || null;
+    threeDModelProfiles.find((profile) => profile.id === selectedModelProfileId) || null;
   const selected2dDetectionModelProfile =
     yolo2dDetectionModelProfiles.find((profile) => profile.id === selected2dDetectionModelProfileId) || yolo2dDetectionModelProfiles[0] || null;
   const selected2dSegmentationModelProfile =
@@ -644,13 +645,20 @@ export default function AppWorkbench() {
     return refreshTrackingReadiness();
   }
 
-  async function loadModelProfilesInBackground() {
+  async function loadModelProfilesInBackground({ sequenceId = currentSequenceId } = {}) {
     if (modelCatalogRequestRef.current) {
       return modelCatalogRequestRef.current;
     }
     setModelCatalogStatus("loading");
-    const requestPromise = request("/jobs/auto-label/models")
+    modelCatalogSequenceRef.current = sequenceId || null;
+    const modelsPath = sequenceId
+      ? `/jobs/auto-label/models?sequence_id=${encodeURIComponent(sequenceId)}`
+      : "/jobs/auto-label/models";
+    const requestPromise = request(modelsPath)
       .then((payload) => {
+        if ((sequenceId || null) !== modelCatalogSequenceRef.current) {
+          return payload;
+        }
         const nextProfiles = (payload.profiles || []).filter((profile) => profile.is_available);
         if (!nextProfiles.length) {
           setModelProfiles([]);
@@ -661,7 +669,7 @@ export default function AppWorkbench() {
           return payload;
         }
         setModelProfiles(nextProfiles);
-        const nextOpenpcdetProfiles = nextProfiles.filter((profile) => profile.provider !== "yolo");
+        const next3dProfiles = nextProfiles.filter((profile) => profile.provider !== "yolo");
         const nextYolo2dDetectionProfiles = nextProfiles.filter(
           (profile) => profile.provider === "yolo" && profile.task === "2d_object_detection"
         );
@@ -669,13 +677,10 @@ export default function AppWorkbench() {
           (profile) => profile.provider === "yolo" && profile.task === "2d_semantic_segmentation"
         );
         setSelectedModelProfileId((current) => {
-          if (nextOpenpcdetProfiles.some((profile) => profile.id === current)) {
+          if (next3dProfiles.some((profile) => profile.id === current)) {
             return current;
           }
-          if (payload.default_model_profile_id && nextOpenpcdetProfiles.some((profile) => profile.id === payload.default_model_profile_id)) {
-            return payload.default_model_profile_id;
-          }
-          return nextOpenpcdetProfiles[0]?.id || "";
+          return "";
         });
         setSelected2dDetectionModelProfileId((current) => {
           if (nextYolo2dDetectionProfiles.some((profile) => profile.id === current)) {
@@ -693,6 +698,9 @@ export default function AppWorkbench() {
         return payload;
       })
       .catch((error) => {
+        if ((sequenceId || null) !== modelCatalogSequenceRef.current) {
+          return null;
+        }
         setModelCatalogStatus("error");
         return null;
       })
@@ -703,13 +711,13 @@ export default function AppWorkbench() {
     return requestPromise;
   }
 
-  function scheduleModelProfileLoad() {
+  function scheduleModelProfileLoad(sequenceId = currentSequenceId) {
     if (modelCatalogStatus === "loading" || modelCatalogStatus === "ready" || modelCatalogTimerRef.current) {
       return;
     }
     modelCatalogTimerRef.current = window.setTimeout(() => {
       modelCatalogTimerRef.current = null;
-      loadModelProfilesInBackground();
+      loadModelProfilesInBackground({ sequenceId });
     }, 300);
   }
 
@@ -735,6 +743,15 @@ export default function AppWorkbench() {
       if (loadedSequence?.id) {
         setCurrentSequenceId(loadedSequence.id);
       }
+      if (modelCatalogTimerRef.current) {
+        window.clearTimeout(modelCatalogTimerRef.current);
+        modelCatalogTimerRef.current = null;
+      }
+      modelCatalogRequestRef.current = null;
+      modelCatalogSequenceRef.current = null;
+      setModelProfiles([]);
+      setSelectedModelProfileId("");
+      setModelCatalogStatus("idle");
       setFrameIndex(0);
       setSelectedAnnotationId(null);
       setLidarSemanticLabels(null);
@@ -1141,7 +1158,7 @@ export default function AppWorkbench() {
         detail.annotations.some((annotation) => annotation.id === current) ? current : detail.annotations[0]?.id || null
       );
       updateStatus(`Frame ${nextFrameIndex} loaded.`);
-      scheduleModelProfileLoad();
+      scheduleModelProfileLoad(sequenceId);
     } catch (error) {
       if (error?.name === "AbortError") {
         return;
@@ -1662,7 +1679,7 @@ export default function AppWorkbench() {
             setStartFrame={setStartFrame}
             setEndFrame={setEndFrame}
             isAnnotationMode={isAnnotationMode}
-            modelProfiles={openpcdetModelProfiles}
+            modelProfiles={threeDModelProfiles}
             modelCatalogStatus={modelCatalogStatus}
             selectedModelProfile={selectedModelProfile}
             selectedModelProfileId={selectedModelProfileId}

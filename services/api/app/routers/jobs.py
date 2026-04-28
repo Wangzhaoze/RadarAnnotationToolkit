@@ -30,9 +30,9 @@ async def create_tracking_job(payload: TrackingRequest):
 
 
 @router.get("/jobs/auto-label/models")
-async def list_auto_label_models():
+async def list_auto_label_models(sequence_id: str | None = None):
     try:
-        return await job_manager.list_model_profiles()
+        return await job_manager.list_model_profiles(sequence_id=sequence_id)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

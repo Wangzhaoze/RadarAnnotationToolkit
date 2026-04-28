@@ -89,6 +89,12 @@ class ModelProfile(BaseModel):
     preprocess_point_cloud_range: list[float] | None = None
     default_score_threshold: float = 0.1
     is_available: bool
+    provider: str = "openpcdet"
+    task: str | None = "3d_lidar_bbox"
+    dataset_id: str | None = None
+    training_dataset: str | None = None
+    network_label: str | None = None
+    config_label: str | None = None
 
 
 class ModelCatalogResponse(BaseModel):

@@ -183,11 +183,41 @@ class JobManager:
             message=message,
         )
 
-    async def list_model_profiles(self) -> AutoLabelModelCatalog:
+    async def list_model_profiles(self, sequence_id: str | None = None) -> AutoLabelModelCatalog:
+        dataset_id = None
+        if sequence_id:
+            dataset_id = self.dataset_registry.get(sequence_id).config.adapter
         async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as client:
             response = await self._request_worker(client, "GET", "/models")
             payload = response.json()
-            profiles = list(payload.get("profiles") or [])
+            profiles = []
+            for profile in payload.get("profiles") or []:
+                normalized = {
+                    "id": profile.get("id"),
+                    "name": profile.get("name"),
+                    "architecture": profile.get("architecture"),
+                    "framework": profile.get("framework") or "OpenPCDet",
+                    "weight_name": profile.get("weight_name") or Path(profile.get("ckpt_path", "")).name,
+                    "description": profile.get("description") or "",
+                    "cfg_file": profile.get("cfg_file"),
+                    "ckpt_path": profile.get("ckpt_path") or "",
+                    "class_names": profile.get("class_names") or [],
+                    "default_score_threshold": profile.get("default_score_threshold", 0.1),
+                    "is_available": bool(profile.get("is_available")),
+                    "provider": profile.get("provider") or "openpcdet",
+                    "task": profile.get("task") or "3d_lidar_bbox",
+                    "dataset_id": profile.get("dataset_id"),
+                    "training_dataset": profile.get("training_dataset"),
+                    "network_label": profile.get("network_label"),
+                    "config_label": profile.get("config_label"),
+                }
+                if (
+                    dataset_id
+                    and normalized["provider"] == "openpcdet"
+                    and normalized.get("dataset_id") != dataset_id
+                ):
+                    continue
+                profiles.append(normalized)
             provider_profiles = payload.get("provider_profiles") or {}
             for profile in provider_profiles.get(WILDDET3D_PROVIDER, []):
                 profiles.append(
@@ -205,6 +235,10 @@ class JobManager:
                         "is_available": bool(profile.get("is_available")),
                         "provider": WILDDET3D_PROVIDER,
                         "task": profile.get("task") or WILDDET3D_TASK,
+                        "dataset_id": None,
+                        "training_dataset": "default",
+                        "network_label": "default",
+                        "config_label": "default",
                     }
                 )
             for profile in provider_profiles.get("yolo", []):
@@ -223,11 +257,24 @@ class JobManager:
                         "is_available": bool(profile.get("is_available")),
                         "provider": "yolo",
                         "task": profile.get("task"),
+                        "dataset_id": None,
+                        "training_dataset": None,
+                        "network_label": None,
+                        "config_label": None,
                     }
+                )
+            default_model_profile_id = payload.get("default_model_profile_id")
+            if not any(profile.get("id") == default_model_profile_id for profile in profiles):
+                default_model_profile_id = next(
+                    (profile.get("id") for profile in profiles if str(profile.get("id") or "").endswith("_pv_rcnn_kitti")),
+                    None,
+                ) or next(
+                    (profile.get("id") for profile in profiles if profile.get("provider") != "yolo"),
+                    next((profile.get("id") for profile in profiles), ""),
                 )
             return AutoLabelModelCatalog.model_validate(
                 {
-                    "default_model_profile_id": payload.get("default_model_profile_id"),
+                    "default_model_profile_id": default_model_profile_id,
                     "profiles": profiles,
                 }
             )

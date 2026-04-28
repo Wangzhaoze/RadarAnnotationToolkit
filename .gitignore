@@ -14,6 +14,8 @@ storage/app_state/*
 !storage/annotations/.gitkeep
 
 services/datasets/hella_aeva/*
+!services/datasets/hella_aeva/openpcdet_cfgs/
+!services/datasets/hella_aeva/openpcdet_cfgs/*.yaml
 
 services/workers/base/PointNet/*
 services/workers/base/PromptDA/*
