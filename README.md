@@ -1,43 +1,37 @@
-# Radar Annotation Toolkit
+# <div align="center">**Radar Annotation Toolkit**</div>
 
-![Radar Annotation Toolkit UI](docs/images/Screenshot_2026-04-28_155513.png)
+<p align="center">
+    <a href="https://wangzhaoze.github.io/">Zhaoze Wang</a>
+</p>
 
-**Author:** Zhaoze Wang
+  
+<div align=center>
+    <img src="https://img.shields.io/badge/Python-3.11.16-3776AB.svg?style=for-the-badge&logo=python" alt="python">
+    <img src=https://img.shields.io/badge/PyTorch-2.11.0-EE4C2C.svg?style=for-the-badge&logo=pytorch>
+    <img src="https://img.shields.io/badge/Docker-gray?style=for-the-badge&logo=docker&logoColor=white&labelColor=%23007FFF" alt="Docker">
+    <img src=https://img.shields.io/badge/CUDA-12.8+-76B900?style=for-the-badge&logo=nvidia&logoColor=white>
+    
+</div>
 
+</bn>
 Radar Annotation Toolkit is a web-based annotation and automation workspace for multi-sensor perception data. It currently focuses on LiDAR-centric 3D bounding box annotation, model-assisted 3D object detection, and worker-side tracking.
 
-## Build And Launch
 
-### Requirements
+## GUI Overview
+![Radar Annotation Toolkit UI](docs/images/Screenshot_2026-04-28_155513.png)
+
+
+## 1. Build And Launch
+
+### 1.1 Requirements
 
 - Docker and Docker Compose
 - NVIDIA GPU with Docker GPU runtime
 - Prepared dataset folders mounted from the host machine
 - Optional HTTP/HTTPS proxy environment variables if Docker builds need network access
 
-### Dataset Mounts
 
-The compose file reads dataset roots from environment variables and mounts them into the API and worker containers. 
-
-Worker checkpoints are mounted separately through `WORKER_CKPT_ROOT`.  Keep that directory on a Docker-visible local drive such as `C:` or `D:`. Avoid cloud-synced virtual paths such as Google Drive mount points, because Docker Desktop may start the container without exposing the checkpoint files correctly.
-
-Example Windows host setup:
-
-```dotenv
-WORKER_CKPT_ROOT=services/workers/base/ckpts
-RADELFT_DATASET_ROOT=D:/Datasets/RaDelft
-RORAD_DATASET_ROOT=D:/Datasets/RoRad
-```
-
-Proxy variables can also be passed from the host environment during image builds:
-
-```dotenv
-HTTP_PROXY
-HTTPS_PROXY
-NO_PROXY=localhost,127.0.0.1,api,web,worker-base
-```
-
-### Build Images
+### 1.2 Build Images
 
 ```bash
 docker compose build
@@ -51,7 +45,7 @@ docker compose build web
 docker compose build worker-base
 ```
 
-### Start Services
+### 1.3 Start Services
 
 ```bash
 docker compose up -d
@@ -75,9 +69,20 @@ docker compose restart api
 docker compose restart worker-base
 ```
 
-## System Components
+## 2. TODO
 
-### Web
+- Implement and improve tracking workflows.
+- Export annotations to fixed, documented formats.
+- Refactor OpenPCDet weight and config profile options.
+- Deploy camera tasks based on YOLO.
+- Add camera semantic segmentation.
+- Add camera object detection.
+- Add camera object tracking.
+- Add camera depth estimation.
+
+## 3. System Components
+
+### 3.1 Web
 
 The Web service is the browser-facing annotation interface under `apps/web`.
 
@@ -93,7 +98,7 @@ It is responsible for:
 
 The Web service talks only to the API. It does not access datasets, model weights, or worker internals directly.
 
-### API
+### 3.2 API
 
 The API service is the orchestration backend under `services/api`.
 
@@ -108,7 +113,7 @@ It is responsible for:
 
 Dataset definitions are code-based. New datasets are added as plugins under `services/datasets/<dataset_id>`; YAML dataset presets are no longer used.
 
-### Worker Base
+### 3.3 Worker-Base
 
 The Worker Base service is the shared algorithm runtime under `services/workers/base`.
 
@@ -131,14 +136,3 @@ services/datasets                   Dataset loaders and dataset-specific model c
 ```
 
 The API sends requests to `worker-base` through `WORKER_URL`. The worker returns serialized model or tracking results, and the API decides how to write them back into the active annotation set.
-
-## TODO
-
-- Implement and improve tracking workflows.
-- Export annotations to fixed, documented formats.
-- Refactor OpenPCDet weight and config profile options.
-- Deploy camera tasks based on YOLO.
-- Add camera semantic segmentation.
-- Add camera object detection.
-- Add camera object tracking.
-- Add camera depth estimation.
