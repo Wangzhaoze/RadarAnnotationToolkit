@@ -32,7 +32,6 @@ services:
       DATASET_PLUGIN_ROOT: /workspace/services/datasets
       RADELFT_RAMAP_PREPROCESS_WORKERS: 6
       RORAD_DATASET_ROOT: /workspace-data/rorad
-      HELLA_AEVA_DATASET_ROOT: /workspace-data/hella_aeva
       WORKER_URL: http://worker-base:8010
       HOST_FILESYSTEM_ROOT: /hostfs
       NO_PROXY: localhost,127.0.0.1,::1,api,web,worker-base,host.docker.internal
@@ -48,7 +47,6 @@ services:
       - D:/:/hostfs/d
       - ${RADELFT_DATASET_ROOT:-D:/Datasets/RaDelft}:/workspace-data/radelft
       - ${RORAD_DATASET_ROOT:-D:/Datasets/RoRad}:/workspace-data/rorad:ro
-      - ${HELLA_AEVA_DATASET_ROOT:-D:/Datasets/Hella_Aeva}:/workspace-data/hella_aeva:ro
 
   worker-base:
     build:
@@ -79,7 +77,6 @@ services:
     ports:
       - "8010:8010"
     volumes:
-      - ${WORKER_CKPT_ROOT:-D:/RadarAnnotationToolkit-ckpts}:/workspace/services/workers/base/ckpts:ro
+      - ${WORKER_CKPT_ROOT:-services/workers/base/ckpts}:/workspace/services/workers/base/ckpts:ro
       - ${RADELFT_DATASET_ROOT:-D:/Datasets/RaDelft}:/workspace-data/radelft:ro
       - ${RORAD_DATASET_ROOT:-D:/Datasets/RoRad}:/workspace-data/rorad:ro
-      - ${HELLA_AEVA_DATASET_ROOT:-D:/Datasets/Hella_Aeva}:/workspace-data/hella_aeva:ro

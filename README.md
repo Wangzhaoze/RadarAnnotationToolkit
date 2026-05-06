@@ -19,22 +19,21 @@ Radar Annotation Toolkit is a web-based annotation and automation workspace for 
 
 The compose file reads dataset roots from environment variables and mounts them into the API and worker containers. 
 
-Worker checkpoints are mounted separately through `WORKER_CKPT_ROOT`. If you do not set it explicitly, Compose defaults to `D:/RadarAnnotationToolkit-ckpts`. Keep that directory on a Docker-visible local drive such as `C:` or `D:`. Avoid cloud-synced virtual paths such as Google Drive mount points, because Docker Desktop may start the container without exposing the checkpoint files correctly.
+Worker checkpoints are mounted separately through `WORKER_CKPT_ROOT`.  Keep that directory on a Docker-visible local drive such as `C:` or `D:`. Avoid cloud-synced virtual paths such as Google Drive mount points, because Docker Desktop may start the container without exposing the checkpoint files correctly.
 
 Example Windows host setup:
 
 ```dotenv
-WORKER_CKPT_ROOT=D:/RadarAnnotationToolkit-ckpts
+WORKER_CKPT_ROOT=services/workers/base/ckpts
 RADELFT_DATASET_ROOT=D:/Datasets/RaDelft
 RORAD_DATASET_ROOT=D:/Datasets/RoRad
-HELLA_AEVA_DATASET_ROOT=D:/Datasets/Hella_Aeva
 ```
 
 Proxy variables can also be passed from the host environment during image builds:
 
 ```dotenv
-HTTP_PROXY=http://127.0.0.1:7890
-HTTPS_PROXY=http://127.0.0.1:7890
+HTTP_PROXY
+HTTPS_PROXY
 NO_PROXY=localhost,127.0.0.1,api,web,worker-base
 ```
 
