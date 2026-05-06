@@ -6,10 +6,28 @@
 # @File    : services/workers/base/yolo/demo_video_track.py
 # @IDE     : vscode
 
+import os
+from pathlib import Path
+
 from ultralytics.models.sam import SAM3VideoSemanticPredictor
 
+YOLO_CKPT_ROOT = Path(
+    os.getenv(
+        "YOLO_CKPT_ROOT",
+        str(Path(__file__).resolve().parents[1] / "ckpts" / "yolo"),
+    )
+)
+
 # Initialize semantic video predictor
-overrides = dict(conf=0.25, task="segment", mode="predict", imgsz=640, model="sam3.pt", half=True, save=True)
+overrides = dict(
+    conf=0.25,
+    task="segment",
+    mode="predict",
+    imgsz=640,
+    model=str(YOLO_CKPT_ROOT / "sam3.pt"),
+    half=True,
+    save=True,
+)
 predictor = SAM3VideoSemanticPredictor(overrides=overrides)
 
 # Track concepts using text prompts

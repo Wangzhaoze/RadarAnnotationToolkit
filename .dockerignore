@@ -4,3 +4,8 @@
 **/.pytest_cache/
 **/node_modules/
 storage/
+services/workers/base/ckpts/
+services/workers/base/openpcdet/assets/*.pth
+services/workers/base/yolo/assets/*.pt
+services/workers/base/WildDet3D/ckpt/*.pt
+services/workers/base/PointNet/checkpoints/

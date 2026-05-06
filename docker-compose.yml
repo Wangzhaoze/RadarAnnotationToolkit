@@ -19,9 +19,6 @@ services:
     restart: unless-stopped
     depends_on:
       - api
-    volumes:
-      - ./apps/web:/workspace/apps/web
-      - /workspace/apps/web/node_modules
 
   api:
     build:
@@ -46,8 +43,6 @@ services:
     depends_on:
       - worker-base
     volumes:
-      - ./services/api/app:/workspace/services/api/app
-      - ./services/datasets:/workspace/services/datasets
       - ./storage:/workspace/storage
       - C:/:/hostfs/c
       - D:/:/hostfs/d
@@ -58,17 +53,19 @@ services:
   worker-base:
     build:
       context: .
-      dockerfile: docs/docker/openpcdet_devel_cu128/Dockerfile
+      dockerfile: services/workers/base/Dockerfile
       args: *build_proxy_args
     environment:
       WORKER_HOST: 0.0.0.0
       WORKER_PORT: 8010
       WORKER_SOURCE_ROOT: /workspace/services/workers/base
+      WORKER_CKPT_ROOT: /workspace/services/workers/base/ckpts
       OPENPCDET_SOURCE_ROOT: /workspace/services/workers/base/openpcdet
-      OPENPCDET_ASSETS_ROOT: /workspace/services/workers/base/openpcdet/assets
+      OPENPCDET_CKPT_ROOT: /workspace/services/workers/base/ckpts/openpcdet
       WILDDET3D_SOURCE_ROOT: /workspace/services/workers/base/WildDet3D
+      WILDDET3D_CKPT_ROOT: /workspace/services/workers/base/ckpts/wilddet3d
       YOLO_SOURCE_ROOT: /workspace/services/workers/base/yolo
-      YOLO_ASSETS_ROOT: /workspace/services/workers/base/yolo/assets
+      YOLO_CKPT_ROOT: /workspace/services/workers/base/ckpts/yolo
       DATASET_PLUGIN_ROOT: /workspace/services/datasets
       DEFAULT_MODEL_PROFILE_ID: pv_rcnn_kitti
       HTTP_PROXY: ${HTTP_PROXY:-}
@@ -82,19 +79,7 @@ services:
     ports:
       - "8010:8010"
     volumes:
-      - ./services/datasets:/workspace/services/datasets
-      - ./services/workers/base/worker_base:/workspace/services/workers/base/worker_base
-      - ./services/workers/base/tracking:/workspace/services/workers/base/tracking
-      - ./services/workers/base/openpcdet/app/main.py:/workspace/services/workers/base/openpcdet/app/main.py
-      - ./services/workers/base/openpcdet/app/model_profiles.py:/workspace/services/workers/base/openpcdet/app/model_profiles.py
-      - ./services/workers/base/WildDet3D:/workspace/services/workers/base/WildDet3D
-      - ./services/workers/base/yolo:/workspace/services/workers/base/yolo
-      - ./services/workers/base/openpcdet/pcdet/utils/spconv_utils.py:/workspace/services/workers/base/openpcdet/pcdet/utils/spconv_utils.py
-      - ./services/workers/base/openpcdet/pcdet/models/backbones_2d/base_bev_backbone.py:/workspace/services/workers/base/openpcdet/pcdet/models/backbones_2d/base_bev_backbone.py
-      - ./services/workers/base/openpcdet/pcdet/models/backbones_3d/vfe/dynamic_pillar_vfe.py:/workspace/services/workers/base/openpcdet/pcdet/models/backbones_3d/vfe/dynamic_pillar_vfe.py
-      - ./services/workers/base/openpcdet/pcdet/models/backbones_3d/vfe/dynamic_mean_vfe.py:/workspace/services/workers/base/openpcdet/pcdet/models/backbones_3d/vfe/dynamic_mean_vfe.py
-      - ./services/workers/base/openpcdet/assets:/workspace/services/workers/base/openpcdet/assets
-      - ./docs/images:/workspace/docs/images:ro
+      - ${WORKER_CKPT_ROOT:-D:/RadarAnnotationToolkit-ckpts}:/workspace/services/workers/base/ckpts:ro
       - ${RADELFT_DATASET_ROOT:-D:/Datasets/RaDelft}:/workspace-data/radelft:ro
       - ${RORAD_DATASET_ROOT:-D:/Datasets/RoRad}:/workspace-data/rorad:ro
       - ${HELLA_AEVA_DATASET_ROOT:-D:/Datasets/Hella_Aeva}:/workspace-data/hella_aeva:ro

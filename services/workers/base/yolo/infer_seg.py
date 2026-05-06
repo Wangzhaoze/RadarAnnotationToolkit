@@ -16,7 +16,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 YOLO_SOURCE_ROOT = Path(os.getenv("YOLO_SOURCE_ROOT", "/workspace/services/workers/base/yolo"))
-YOLO_ASSETS_ROOT = Path(os.getenv("YOLO_ASSETS_ROOT", str(YOLO_SOURCE_ROOT / "assets")))
+DEFAULT_YOLO_CKPT_ROOT = YOLO_SOURCE_ROOT.parent / "ckpts" / "yolo"
+YOLO_CKPT_ROOT = Path(
+    os.getenv(
+        "YOLO_CKPT_ROOT",
+        os.getenv("YOLO_ASSETS_ROOT", str(DEFAULT_YOLO_CKPT_ROOT)),
+    )
+)
 DEFAULT_YOLO_MODEL_ID = "yolo26l_2d_detection"
 YOLO_CLASS_NAMES = ["Vehicle", "Pedestrian", "Bicycle", "truck", "bus"]
 
@@ -91,7 +97,7 @@ YOLO_PROFILES = {
         "task": "2d_object_detection",
         "weight_name": "yolo26l.pt",
         "description": "YOLO detection model for camera 2D bounding boxes.",
-        "ckpt_path": str(YOLO_ASSETS_ROOT / "yolo26l.pt"),
+        "ckpt_path": str(YOLO_CKPT_ROOT / "yolo26l.pt"),
     },
     "yolo26l_2d_segmentation": {
         "id": "yolo26l_2d_segmentation",
@@ -100,7 +106,7 @@ YOLO_PROFILES = {
         "task": "2d_semantic_segmentation",
         "weight_name": "yolo26l-seg.pt",
         "description": "YOLO segmentation model for camera semantic masks.",
-        "ckpt_path": str(YOLO_ASSETS_ROOT / "yolo26l-seg.pt"),
+        "ckpt_path": str(YOLO_CKPT_ROOT / "yolo26l-seg.pt"),
     },
     "yolo26l_seg": {
         "id": "yolo26l_seg",
@@ -109,7 +115,7 @@ YOLO_PROFILES = {
         "task": "instance_segmentation",
         "weight_name": "yolo26l-seg.pt",
         "description": "Compatibility profile for direct YOLO segmentation smoke tests.",
-        "ckpt_path": str(YOLO_ASSETS_ROOT / "yolo26l-seg.pt"),
+        "ckpt_path": str(YOLO_CKPT_ROOT / "yolo26l-seg.pt"),
     },
 }
 

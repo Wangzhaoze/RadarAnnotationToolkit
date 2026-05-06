@@ -19,4 +19,6 @@ services/datasets/hella_aeva/*
 
 services/workers/base/PointNet/*
 services/workers/base/PromptDA/*
-services/workers/base/yolo/assets/sam3.pt
+services/workers/base/ckpts/pointnet/
+services/workers/base/ckpts/wilddet3d/
+services/workers/base/ckpts/yolo/sam3.pt

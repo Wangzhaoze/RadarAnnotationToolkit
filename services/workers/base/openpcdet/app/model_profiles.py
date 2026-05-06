@@ -18,7 +18,13 @@ except ImportError:  # pragma: no cover - OpenPCDet images normally include PyYA
 
 
 OPENPCDET_SOURCE_ROOT = Path(os.getenv("OPENPCDET_SOURCE_ROOT", "/workspace/services/workers/base/openpcdet"))
-OPENPCDET_ASSETS_ROOT = Path(os.getenv("OPENPCDET_ASSETS_ROOT", str(OPENPCDET_SOURCE_ROOT / "assets")))
+DEFAULT_OPENPCDET_CKPT_ROOT = OPENPCDET_SOURCE_ROOT.parent / "ckpts" / "openpcdet"
+OPENPCDET_CKPT_ROOT = Path(
+    os.getenv(
+        "OPENPCDET_CKPT_ROOT",
+        os.getenv("OPENPCDET_ASSETS_ROOT", str(DEFAULT_OPENPCDET_CKPT_ROOT)),
+    )
+)
 
 KITTI_CLASS_NAMES = ["Car", "Pedestrian", "Cyclist"]
 NUSCENES_CLASS_NAMES = [
@@ -182,7 +188,7 @@ def _discover_dataset_profiles() -> dict[str, dict]:
                 "weight_name": spec["weight_name"],
                 "description": spec["description"],
                 "cfg_file": str(config_path),
-                "ckpt_path": str(OPENPCDET_ASSETS_ROOT / spec["weight_name"]),
+                "ckpt_path": str(OPENPCDET_CKPT_ROOT / spec["weight_name"]),
                 "class_names": _extract_class_names(config, spec["class_names"]),
                 "preprocess_point_cloud_range": _extract_point_cloud_range(
                     config,

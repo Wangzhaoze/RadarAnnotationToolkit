@@ -16,7 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 WILDDET3D_SOURCE_ROOT = Path(os.getenv("WILDDET3D_SOURCE_ROOT", "/workspace/services/workers/base/WildDet3D"))
-WILDDET3D_CKPT_PATH = WILDDET3D_SOURCE_ROOT / "ckpt" / "wilddet3d_alldata_all_prompt_v1.0.pt"
+DEFAULT_WILDDET3D_CKPT_ROOT = WILDDET3D_SOURCE_ROOT.parent / "ckpts" / "wilddet3d"
+WILDDET3D_CKPT_ROOT = Path(os.getenv("WILDDET3D_CKPT_ROOT", str(DEFAULT_WILDDET3D_CKPT_ROOT)))
+WILDDET3D_CKPT_PATH = WILDDET3D_CKPT_ROOT / "wilddet3d_alldata_all_prompt_v1.0.pt"
 DEFAULT_WILDDET3D_MODEL_ID = "wilddet3d_camera_only"
 DEFAULT_TOOLKIT_CLASS_NAMES = ["Car", "Pedestrian", "Cyclist"]
 DEFAULT_PROMPT_TEXTS = ["car", "person", "bicycle"]

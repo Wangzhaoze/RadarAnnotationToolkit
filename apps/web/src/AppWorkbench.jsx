@@ -659,7 +659,7 @@ export default function AppWorkbench() {
         if ((sequenceId || null) !== modelCatalogSequenceRef.current) {
           return payload;
         }
-        const nextProfiles = (payload.profiles || []).filter((profile) => profile.is_available);
+        const nextProfiles = payload.profiles || [];
         if (!nextProfiles.length) {
           setModelProfiles([]);
           setSelectedModelProfileId("");
@@ -676,6 +676,10 @@ export default function AppWorkbench() {
         const nextYolo2dSegmentationProfiles = nextProfiles.filter(
           (profile) => profile.provider === "yolo" && profile.task === "2d_semantic_segmentation"
         );
+        const nextAvailable2dDetectionProfile =
+          nextYolo2dDetectionProfiles.find((profile) => profile.is_available) || nextYolo2dDetectionProfiles[0] || null;
+        const nextAvailable2dSegmentationProfile =
+          nextYolo2dSegmentationProfiles.find((profile) => profile.is_available) || nextYolo2dSegmentationProfiles[0] || null;
         setSelectedModelProfileId((current) => {
           if (next3dProfiles.some((profile) => profile.id === current)) {
             return current;
@@ -686,13 +690,13 @@ export default function AppWorkbench() {
           if (nextYolo2dDetectionProfiles.some((profile) => profile.id === current)) {
             return current;
           }
-          return nextYolo2dDetectionProfiles[0]?.id || "";
+          return nextAvailable2dDetectionProfile?.id || "";
         });
         setSelected2dSegmentationModelProfileId((current) => {
           if (nextYolo2dSegmentationProfiles.some((profile) => profile.id === current)) {
             return current;
           }
-          return nextYolo2dSegmentationProfiles[0]?.id || "";
+          return nextAvailable2dSegmentationProfile?.id || "";
         });
         setModelCatalogStatus("ready");
         return payload;

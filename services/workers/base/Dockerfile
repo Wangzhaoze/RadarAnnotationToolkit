@@ -12,10 +12,12 @@ ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0;10.0;12.0"
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
 ENV WORKER_SOURCE_ROOT=/workspace/services/workers/base
+ENV WORKER_CKPT_ROOT=/workspace/services/workers/base/ckpts
 ENV OPENPCDET_SOURCE_ROOT=/workspace/services/workers/base/openpcdet
-ENV OPENPCDET_ASSETS_ROOT=/workspace/services/workers/base/openpcdet/assets
+ENV OPENPCDET_CKPT_ROOT=/workspace/services/workers/base/ckpts/openpcdet
+ENV WILDDET3D_CKPT_ROOT=/workspace/services/workers/base/ckpts/wilddet3d
 ENV YOLO_SOURCE_ROOT=/workspace/services/workers/base/yolo
-ENV YOLO_ASSETS_ROOT=/workspace/services/workers/base/yolo/assets
+ENV YOLO_CKPT_ROOT=/workspace/services/workers/base/ckpts/yolo
 ENV DATASET_PLUGIN_ROOT=/workspace/services/datasets
 ENV PYTHON_VERSION=3.11.15
 ENV PYTHON_HOME=/opt/python/3.11.15
@@ -49,9 +51,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /tmp/runtime-root /workspace/services/workers/base/openpcdet/assets
-COPY services/workers/base /workspace/services/workers/base
-COPY services/datasets /workspace/services/datasets
+RUN mkdir -p \
+    /tmp/runtime-root \
+    /workspace/services/workers/base/ckpts/openpcdet \
+    /workspace/services/workers/base/ckpts/wilddet3d \
+    /workspace/services/workers/base/ckpts/yolo
+COPY services/workers/base/openpcdet/requirements.txt /tmp/openpcdet-requirements.txt
 
 RUN wget -O /tmp/Python-${PYTHON_VERSION}.tgz https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz \
     && tar -xzf /tmp/Python-${PYTHON_VERSION}.tgz -C /tmp \
@@ -74,10 +79,8 @@ RUN /opt/venv/bin/python -m pip install \
 
 RUN /opt/venv/bin/python -m pip install spconv-cu126
 
-RUN /opt/venv/bin/python -m pip install -r requirements.txt
+RUN /opt/venv/bin/python -m pip install -r /tmp/openpcdet-requirements.txt
 RUN /opt/venv/bin/python -m pip install ultralytics
-
-RUN /opt/venv/bin/python setup.py develop
 
 RUN /opt/venv/bin/python -m pip install vis4d==1.0.0
 
@@ -114,6 +117,11 @@ RUN /opt/venv/bin/python -m pip install --no-cache-dir \
     utils3d@git+https://github.com/EasternJournalist/utils3d.git
 
 RUN /opt/venv/bin/python -m pip install "pydantic>=2.7,<3" fastapi==0.115.0
+
+COPY services/workers/base /workspace/services/workers/base
+COPY services/datasets /workspace/services/datasets
+
+RUN /opt/venv/bin/python setup.py develop
 
 EXPOSE 8010
 

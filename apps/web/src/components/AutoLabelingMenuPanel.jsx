@@ -45,6 +45,10 @@ function frameworkSortKey(framework) {
   return `2-${framework}`;
 }
 
+function formatAvailabilityLabel(label, isAvailable) {
+  return isAvailable ? label : `${label} (Unavailable)`;
+}
+
 function CompactJobBox({ launchState, job, active, canCancel, onCancel }) {
   if (launchState) {
     return (
@@ -269,6 +273,7 @@ export default function AutoLabelingMenuPanel({
 
   const selected3dProvider = selectedModelProfile?.provider || (selected3dFramework === "WildDet3D" ? "wilddet3d" : "openpcdet");
   const selected3dTask = selectedModelProfile?.task || "";
+  const selected3dModelAvailable = Boolean(selectedModelProfile?.is_available);
   const isCameraOnly3dModel = selected3dFramework === "WildDet3D" || selected3dProvider === "wilddet3d" || selected3dTask === "3d_camera_bbox";
   const canRun3dDetection = hasWorkspace && (
     isCameraOnly3dModel
@@ -300,6 +305,8 @@ export default function AutoLabelingMenuPanel({
   const canCancelBox2d = box2dJobIsActive && !box2dJob.cancel_requested;
   const canCancelSegmentation = segmentationJobIsActive && !segmentationJob.cancel_requested;
   const canCancelTracking = trackingJobIsActive && !trackingJob.cancel_requested;
+  const selected2dDetectionModelAvailable = Boolean(selected2dDetectionModelProfile?.is_available);
+  const selected2dSegmentationModelAvailable = Boolean(selected2dSegmentationModelProfile?.is_available);
   const rawJobPercent = autoLabelJob ? clampProgressPercent((autoLabelJob.progress || 0) * 100) : 0;
   const isWarmupPhase =
     autoLabelJob &&
@@ -334,8 +341,8 @@ export default function AutoLabelingMenuPanel({
       ? "Preparing..."
       : autoLabelJob
         ? `${autoLabelJob.status} - ${displayJobPercentLabel}`
-        : selectedModelProfile
-          ? `${selectedModelProfile.name} - ${startFrame}-${endFrame}`
+      : selectedModelProfile
+          ? `${selectedModelProfile.name}${selected3dModelAvailable ? "" : " - unavailable"} - ${startFrame}-${endFrame}`
           : selected3dFramework
             ? `${selected3dFramework} - choose config`
             : "Choose framework";
@@ -358,7 +365,9 @@ export default function AutoLabelingMenuPanel({
       ? "Preparing..."
       : box2dJob
         ? `${box2dJob.status} - ${formatProgressPercent((box2dJob.progress || 0) * 100, box2dJobIsActive)}`
-        : selected2dDetectionModelProfile?.name || "No YOLO model";
+        : selected2dDetectionModelProfile
+          ? `${selected2dDetectionModelProfile.name}${selected2dDetectionModelAvailable ? "" : " - unavailable"}`
+          : "No YOLO model";
   const segmentationSummary = !hasWorkspace
     ? "Load a dataset first"
     : modelCatalogIsLoading
@@ -367,7 +376,9 @@ export default function AutoLabelingMenuPanel({
       ? "Preparing..."
       : segmentationJob
         ? `${segmentationJob.status} - ${formatProgressPercent((segmentationJob.progress || 0) * 100, segmentationJobIsActive)}`
-        : selected2dSegmentationModelProfile?.name || "No YOLO model";
+        : selected2dSegmentationModelProfile
+          ? `${selected2dSegmentationModelProfile.name}${selected2dSegmentationModelAvailable ? "" : " - unavailable"}`
+          : "No YOLO model";
 
   return (
     <>
@@ -387,11 +398,16 @@ export default function AutoLabelingMenuPanel({
             disabled={!canChoose3dModel}
           >
             <option value="">--</option>
-            {frameworkOptions.map((framework) => (
-              <option key={framework} value={framework}>
-                {framework}
-              </option>
-            ))}
+            {frameworkOptions.map((framework) => {
+              const frameworkAvailable = modelProfiles.some(
+                (profile) => (profile.framework || profile.provider) === framework && profile.is_available
+              );
+              return (
+                <option key={framework} value={framework}>
+                  {formatAvailabilityLabel(framework, frameworkAvailable)}
+                </option>
+              );
+            })}
           </select>
         </label>
         <label className="field-row">
@@ -403,11 +419,16 @@ export default function AutoLabelingMenuPanel({
             disabled={!canChoose3dModel || !selected3dFramework || !networkOptions.length}
           >
             <option value="">--</option>
-            {networkOptions.map((network) => (
-              <option key={network} value={network}>
-                {network}
-              </option>
-            ))}
+            {networkOptions.map((network) => {
+              const networkAvailable = frameworkProfiles.some(
+                (profile) => profileNetworkLabel(profile) === network && profile.is_available
+              );
+              return (
+                <option key={network} value={network}>
+                  {formatAvailabilityLabel(network, networkAvailable)}
+                </option>
+              );
+            })}
           </select>
         </label>
         <label className="field-row">
@@ -419,18 +440,25 @@ export default function AutoLabelingMenuPanel({
             disabled={!canChoose3dModel || !selected3dFramework || !selected3dNetwork || !configOptions.length}
           >
             <option value="">--</option>
-            {configOptions.map((config) => (
-              <option key={config} value={config}>
-                {config}
-              </option>
-            ))}
+            {configOptions.map((config) => {
+              const configAvailable = networkProfiles.some(
+                (profile) => profileConfigLabel(profile) === config && profile.is_available
+              );
+              return (
+                <option key={config} value={config} disabled={!configAvailable}>
+                  {formatAvailabilityLabel(config, configAvailable)}
+                </option>
+              );
+            })}
           </select>
         </label>
         <label className="field-row">
           <ParameterLabel helpKey="modelWeight3d">Weight</ParameterLabel>
           <select className="model-select" value={selectedModelProfileId} disabled>
             {selectedModelProfile ? (
-              <option value={selectedModelProfile.id}>{selectedModelProfile.weight_name}</option>
+              <option value={selectedModelProfile.id}>
+                {formatAvailabilityLabel(selectedModelProfile.weight_name, selected3dModelAvailable)}
+              </option>
             ) : (
               <option value="">--</option>
             )}
@@ -441,6 +469,9 @@ export default function AutoLabelingMenuPanel({
         {!hasWorkspace ? <p className="panel-hint">Auto-labeling is unavailable until a dataset is loaded into the workspace.</p> : null}
         {hasWorkspace && modelCatalogIsLoading ? <p className="panel-hint">Model availability is being checked in the background.</p> : null}
         {hasWorkspace && modelCatalogHasError ? <p className="panel-hint">Model availability could not be checked yet. Data viewing is unaffected.</p> : null}
+        {hasWorkspace && selectedModelProfile && !selected3dModelAvailable ? (
+          <p className="panel-hint">This model is registered but unavailable because its checkpoint is not mounted into the worker container.</p>
+        ) : null}
         {hasWorkspace && !canRun3dDetection && isCameraOnly3dModel ? <p className="panel-hint">WildDet3D requires camera frames, camera intrinsics, and a LiDAR/Camera transform.</p> : null}
         {hasWorkspace && !canRun3dDetection && !isCameraOnly3dModel ? <p className="panel-hint">This 3D detector is unavailable until the dataset provides LiDAR frames.</p> : null}
         <p className="panel-hint">Tracking unlocks only after this whole frame range has been processed by frame-wise detection, including frames with zero boxes.</p>
@@ -503,7 +534,7 @@ export default function AutoLabelingMenuPanel({
           <button
             className="primary-button"
             onClick={onRunAutoLabel}
-            disabled={!selectedModelProfile || hasActiveJob || !canRun3dDetection}
+            disabled={!selected3dModelAvailable || hasActiveJob || !canRun3dDetection}
           >
             Run
           </button>
@@ -625,7 +656,7 @@ export default function AutoLabelingMenuPanel({
           <div>Provider</div>
           <strong>YOLO</strong>
           <div>Status</div>
-          <strong>{selected2dDetectionModelProfile ? "Ready" : "No model"}</strong>
+          <strong>{selected2dDetectionModelProfile ? (selected2dDetectionModelAvailable ? "Ready" : "Unavailable") : "No model"}</strong>
           <div>Output</div>
           <strong>2D boxes</strong>
         </div>
@@ -639,8 +670,8 @@ export default function AutoLabelingMenuPanel({
           >
             {yolo2dDetectionModelProfiles.length ? (
               yolo2dDetectionModelProfiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name} / {profile.weight_name}
+                <option key={profile.id} value={profile.id} disabled={!profile.is_available}>
+                  {profile.name} / {formatAvailabilityLabel(profile.weight_name, profile.is_available)}
                 </option>
               ))
             ) : (
@@ -654,6 +685,9 @@ export default function AutoLabelingMenuPanel({
         {hasWorkspace && modelCatalogIsLoading ? <p className="panel-hint">Model availability is being checked in the background.</p> : null}
         {hasWorkspace && modelCatalogHasError ? <p className="panel-hint">Model availability could not be checked yet. Data viewing is unaffected.</p> : null}
         {hasWorkspace && !canAnnotate2d ? <p className="panel-hint">2D detection requires camera frames.</p> : null}
+        {hasWorkspace && selected2dDetectionModelProfile && !selected2dDetectionModelAvailable ? (
+          <p className="panel-hint">This model is registered but unavailable because its checkpoint is not mounted into the worker container.</p>
+        ) : null}
         <CompactJobBox
           launchState={box2dLaunchState}
           job={box2dJob}
@@ -662,7 +696,7 @@ export default function AutoLabelingMenuPanel({
           onCancel={onCancelAutoLabel}
         />
         <div className="section-action-row">
-          <button className="primary-button" onClick={onRun2dObjectDetection} disabled={!selected2dDetectionModelProfile || hasActiveJob || !canAnnotate2d}>
+          <button className="primary-button" onClick={onRun2dObjectDetection} disabled={!selected2dDetectionModelAvailable || hasActiveJob || !canAnnotate2d}>
             Run
           </button>
         </div>
@@ -679,7 +713,7 @@ export default function AutoLabelingMenuPanel({
           <div>Provider</div>
           <strong>YOLO</strong>
           <div>Status</div>
-          <strong>{selected2dSegmentationModelProfile ? "Ready" : "No model"}</strong>
+          <strong>{selected2dSegmentationModelProfile ? (selected2dSegmentationModelAvailable ? "Ready" : "Unavailable") : "No model"}</strong>
           <div>Output</div>
           <strong>Camera semantic mask</strong>
         </div>
@@ -693,8 +727,8 @@ export default function AutoLabelingMenuPanel({
           >
             {yolo2dSegmentationModelProfiles.length ? (
               yolo2dSegmentationModelProfiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name} / {profile.weight_name}
+                <option key={profile.id} value={profile.id} disabled={!profile.is_available}>
+                  {profile.name} / {formatAvailabilityLabel(profile.weight_name, profile.is_available)}
                 </option>
               ))
             ) : (
@@ -706,6 +740,9 @@ export default function AutoLabelingMenuPanel({
         <NumberField label="End" helpKey="frameEnd" value={endFrame} step={1} onChange={setEndFrame} disabled={!canAnnotate2d || hasActiveJob} />
         {hasWorkspace && modelCatalogIsLoading ? <p className="panel-hint">Model availability is being checked in the background.</p> : null}
         {hasWorkspace && modelCatalogHasError ? <p className="panel-hint">Model availability could not be checked yet. Data viewing is unaffected.</p> : null}
+        {hasWorkspace && selected2dSegmentationModelProfile && !selected2dSegmentationModelAvailable ? (
+          <p className="panel-hint">This model is registered but unavailable because its checkpoint is not mounted into the worker container.</p>
+        ) : null}
         <p className="panel-hint">Successful runs write a camera semantic layer that can be shown from Show / Layers / Camera Semantic.</p>
         <CompactJobBox
           launchState={segmentationLaunchState}
@@ -715,7 +752,7 @@ export default function AutoLabelingMenuPanel({
           onCancel={onCancelAutoLabel}
         />
         <div className="section-action-row">
-          <button className="primary-button" onClick={onRun2dSemanticSegmentation} disabled={!selected2dSegmentationModelProfile || hasActiveJob || !canAnnotate2d}>
+          <button className="primary-button" onClick={onRun2dSemanticSegmentation} disabled={!selected2dSegmentationModelAvailable || hasActiveJob || !canAnnotate2d}>
             Run
           </button>
         </div>
