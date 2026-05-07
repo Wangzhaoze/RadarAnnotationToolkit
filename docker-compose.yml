@@ -77,6 +77,6 @@ services:
     ports:
       - "8010:8010"
     volumes:
-      - ${WORKER_CKPT_ROOT:-services/workers/base/ckpts}:/workspace/services/workers/base/ckpts:ro
+      - ${WORKER_CKPT_ROOT:-./services/workers/base/ckpts}:/workspace/services/workers/base/ckpts:ro
       - ${RADELFT_DATASET_ROOT:-D:/Datasets/RaDelft}:/workspace-data/radelft:ro
       - ${RORAD_DATASET_ROOT:-D:/Datasets/RoRad}:/workspace-data/rorad:ro
